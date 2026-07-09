@@ -1,63 +1,39 @@
 const DB_NAME = 'LabStockDB';
-const DB_VERSION = 1;
-const STORE = 'items';
+const DB_VERSION = 2;
+let _db = null;
 
-let db;
-
-function openDB() {
+async function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-    req.onupgradeneeded = (e) => {
-      const database = e.target.result;
-      if (!database.objectStoreNames.contains(STORE)) {
-        const store = database.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
-        store.createIndex('name', 'name', { unique: false });
-        store.createIndex('category', 'category', { unique: false });
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('items')) {
+        const s = db.createObjectStore('items', { keyPath: 'id', autoIncrement: true });
+        s.createIndex('sessionId', 'sessionId');
+        s.createIndex('type', 'type');
+      }
+      if (!db.objectStoreNames.contains('sessions')) {
+        db.createObjectStore('sessions', { keyPath: 'id' });
       }
     };
-
-    req.onsuccess = (e) => {
-      db = e.target.result;
-      resolve(db);
-    };
-
+    req.onsuccess = e => { _db = e.target.result; resolve(_db); };
     req.onerror = () => reject(req.error);
   });
 }
 
-function getAllItems() {
+function _tx(store, mode, fn) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).getAll();
+    const req = fn(_db.transaction(store, mode).objectStore(store));
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-function addItem(item) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    const req = tx.objectStore(STORE).add({ ...item, createdAt: Date.now() });
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
+const addItemToDB    = item  => _tx('items', 'readwrite', s => s.add({ ...item, createdAt: Date.now() }));
+const updateItemInDB = item  => _tx('items', 'readwrite', s => s.put(item));
+const deleteItemFromDB = id  => _tx('items', 'readwrite', s => s.delete(id));
+const getAllItemsFromDB = ()  => _tx('items', 'readonly',  s => s.getAll());
 
-function updateItem(item) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    const req = tx.objectStore(STORE).put(item);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function deleteItem(id) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    const req = tx.objectStore(STORE).delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
+const saveSession  = data  => _tx('sessions', 'readwrite', s => s.put({ id: 'current', ...data }));
+const loadSession  = ()    => _tx('sessions', 'readonly',  s => s.get('current'));
+const clearSession = ()    => _tx('sessions', 'readwrite', s => s.delete('current'));
