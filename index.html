@@ -1,48 +1,372 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#2563eb" />
-  <meta name="description" content="Lab Stock Tracker - Manage your lab inventory" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#185FA5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Lab Stock Tracker</title>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <header>
-    <h1>Lab Stock Tracker</h1>
-    <button id="exportBtn">Export Excel</button>
-  </header>
 
-  <main>
-    <section id="scanSection">
-      <button id="scanBtn">Scan Item</button>
-      <video id="cameraPreview" autoplay playsinline></video>
-      <canvas id="cameraCanvas" hidden></canvas>
-    </section>
+  <!-- Shared camera container — moved into scan screens via JS -->
+  <div id="cameraContainer" class="camera-container hidden">
+    <video id="scannerVideo" autoplay playsinline muted></video>
+    <canvas id="scannerCanvas" hidden></canvas>
+    <div class="camera-controls-overlay">
+      <button class="cam-btn" id="flashBtn" aria-label="Torch">⚡</button>
+      <button class="cam-btn" id="focusBtn" aria-label="Focus">◎</button>
+    </div>
+    <div class="viewfinder-frame"></div>
+  </div>
 
-    <section id="inventorySection">
-      <h2>Inventory</h2>
-      <input type="text" id="searchInput" placeholder="Search items..." />
-      <ul id="inventoryList"></ul>
-    </section>
-  </main>
+  <!-- ======== HOME ======== -->
+  <div class="screen active" id="screen-home">
+    <header class="app-header">
+      <h1 class="app-title">Lab Stock Tracker</h1>
+      <button class="icon-btn" id="settingsBtn" aria-label="Settings">⚙</button>
+    </header>
+    <div class="screen-body">
 
-  <div id="itemModal" class="modal hidden">
-    <div class="modal-content">
-      <h2 id="modalTitle">Add Item</h2>
-      <label>Name <input type="text" id="itemName" /></label>
-      <label>Quantity <input type="number" id="itemQty" min="0" /></label>
-      <label>Category <input type="text" id="itemCategory" /></label>
-      <label>Notes <textarea id="itemNotes"></textarea></label>
-      <div class="modal-actions">
-        <button id="saveItemBtn">Save</button>
-        <button id="cancelItemBtn">Cancel</button>
+      <div id="resumeCard" class="resume-card hidden">
+        <span class="resume-card__badge">Interrupted session</span>
+        <p class="resume-card__type" id="resumeType"></p>
+        <p class="resume-card__meta" id="resumeMeta"></p>
+        <div class="btn-row">
+          <button class="btn btn--primary" id="resumeBtn">Resume</button>
+          <button class="btn btn--ghost" id="discardBtn">Discard</button>
+        </div>
+      </div>
+
+      <h2 class="section-heading">New session</h2>
+      <div class="session-list">
+        <button class="session-btn" id="startAntibodyBtn">
+          <span class="session-icon">🧬</span>
+          <span class="session-label">Antibody stocks</span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="session-btn" id="startBoxBtn">
+          <span class="session-icon">📦</span>
+          <span class="session-label">Box inventory</span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="session-btn" id="startHistologyBtn">
+          <span class="session-icon">🔬</span>
+          <span class="session-label">Histology slides</span>
+          <span class="chevron">›</span>
+        </button>
+        <button class="session-btn session-btn--disabled" disabled>
+          <span class="session-icon">❄</span>
+          <span class="session-label">Freezer rack inventory</span>
+          <span class="badge badge--phase2">Phase 2</span>
+        </button>
+      </div>
+
+      <div class="divider"></div>
+      <p class="muted-text">Have an existing spreadsheet?</p>
+      <button class="btn btn--outline btn--full" id="uploadExcelBtn">Upload Excel file</button>
+      <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" hidden>
+    </div>
+
+    <!-- Settings bottom sheet -->
+    <div class="drawer hidden" id="settingsDrawer">
+      <div class="drawer__backdrop" id="settingsBackdrop"></div>
+      <div class="drawer__panel">
+        <h3 class="drawer__title">Settings</h3>
+        <label class="field-group">
+          <span class="field-label">Anthropic API Key</span>
+          <input type="password" id="apiKeyInput" class="input" placeholder="sk-ant-...">
+        </label>
+        <div class="btn-row">
+          <button class="btn btn--primary" id="saveApiKeyBtn">Save</button>
+          <button class="btn btn--ghost" id="closeSettingsBtn">Close</button>
+        </div>
       </div>
     </div>
   </div>
 
+  <!-- ======== COLUMN MAPPING ======== -->
+  <div class="screen" id="screen-column-mapping">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back">‹</button>
+      <h1 class="app-title">Map columns</h1>
+    </header>
+    <div class="screen-body">
+      <div class="file-chip" id="uploadedFileName"></div>
+      <label class="field-group">
+        <span class="field-label">Session type</span>
+        <select id="mappingSessionType" class="input">
+          <option value="">Select type…</option>
+          <option value="antibody">Antibody stocks</option>
+          <option value="box">Box inventory</option>
+          <option value="histology">Histology slides</option>
+        </select>
+      </label>
+      <p class="muted-text">Review how Excel columns map to fields. Adjust dropdowns if needed.</p>
+      <div class="table-scroll">
+        <table class="map-table">
+          <thead>
+            <tr><th>Excel column</th><th>Maps to</th><th></th></tr>
+          </thead>
+          <tbody id="mappingTableBody"></tbody>
+        </table>
+      </div>
+      <h3 class="section-heading">Preview (first 3 rows)</h3>
+      <div class="table-scroll" id="previewTableWrapper"></div>
+      <button class="btn btn--primary btn--full" id="confirmMappingBtn">Import data</button>
+    </div>
+  </div>
+
+  <!-- ======== BOX SETUP ======== -->
+  <div class="screen" id="screen-box-setup">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back">‹</button>
+      <h1 class="app-title">Box setup</h1>
+    </header>
+    <div class="screen-body">
+      <label class="field-group">
+        <span class="field-label">Box number</span>
+        <input type="text" id="boxNumber" class="input" placeholder="e.g. Box 42" autocomplete="off">
+      </label>
+      <label class="field-group">
+        <span class="field-label">Box label / description</span>
+        <input type="text" id="boxLabel" class="input" placeholder="e.g. Primary antibodies 2024" autocomplete="off">
+      </label>
+      <div class="field-group">
+        <span class="field-label">Box size</span>
+        <div class="size-picker" id="sizePicker">
+          <button class="size-btn" data-size="7x7">7 × 7</button>
+          <button class="size-btn" data-size="9x9">9 × 9</button>
+          <button class="size-btn" data-size="10x10">10 × 10</button>
+        </div>
+      </div>
+      <div class="grid-preview-wrap">
+        <p class="muted-text grid-hint hidden" id="gridHint">A1 is highlighted as the first position.</p>
+        <div class="box-grid-scroll">
+          <div class="box-grid" id="boxGrid"></div>
+        </div>
+      </div>
+      <button class="btn btn--primary btn--full" id="startBoxScanBtn" disabled>Start scanning</button>
+    </div>
+  </div>
+
+  <!-- ======== BOX SCAN ======== -->
+  <div class="screen" id="screen-box-scan">
+    <div class="status-bar" id="boxStatusBar">
+      <span id="bsBox">Box —</span>
+      <span id="bsPos">— / —</span>
+      <span id="bsTotal">0 scans</span>
+    </div>
+    <div class="camera-slot" id="boxCameraSlot"></div>
+    <div class="scan-cap-banner hidden" id="scanCapBanner">
+      ⚠ Approaching 500-scan limit — 450 reached
+    </div>
+    <div class="scan-actions">
+      <button class="btn btn--primary btn--scan" id="boxReadBtn">Read label</button>
+      <button class="btn btn--outline btn--scan" id="boxTypeBtn">Type it in</button>
+    </div>
+    <div class="undo-strip-wrap">
+      <div class="undo-strip" id="boxUndoStrip"></div>
+    </div>
+    <div class="last-scanned-section">
+      <p class="last-scanned__title">Last scanned</p>
+      <ul class="last-scanned__list" id="boxLastScannedList"></ul>
+    </div>
+    <button class="btn btn--ghost btn--full end-box-btn" id="endBoxBtn">End box</button>
+    <nav class="nav-bar">
+      <button class="nav-btn nav-btn--active" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge1">0</span></button>
+      <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
+    </nav>
+  </div>
+
+  <!-- ======== BOX RESULT ======== -->
+  <div class="screen" id="screen-box-result">
+    <header class="app-header">
+      <button class="icon-btn" id="boxResultBackBtn" aria-label="Back">‹</button>
+      <h1 class="app-title">Scan result</h1>
+    </header>
+    <div class="screen-body">
+      <div id="boxResultCard" class="result-card"></div>
+    </div>
+    <div class="actions-sticky">
+      <button class="btn btn--primary btn--full" id="boxConfirmBtn">Confirm and add</button>
+      <button class="btn btn--ghost btn--full" id="boxReviewLaterBtn">Review later</button>
+    </div>
+  </div>
+
+  <!-- ======== ANTIBODY SCAN ======== -->
+  <div class="screen" id="screen-antibody-scan">
+    <div class="status-bar">
+      <span>Antibody stocks</span>
+      <span id="abTotal">0 scans</span>
+    </div>
+    <div class="camera-slot" id="abCameraSlot"></div>
+    <div class="scan-actions">
+      <button class="btn btn--primary btn--scan" id="abReadBtn">Read label</button>
+      <button class="btn btn--outline btn--scan" id="abTypeBtn">Type it in</button>
+    </div>
+    <div class="undo-strip-wrap">
+      <div class="undo-strip" id="abUndoStrip"></div>
+    </div>
+    <div class="last-scanned-section">
+      <p class="last-scanned__title">Last scanned</p>
+      <ul class="last-scanned__list" id="abLastScannedList"></ul>
+    </div>
+    <nav class="nav-bar">
+      <button class="nav-btn nav-btn--active" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge2">0</span></button>
+      <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
+    </nav>
+  </div>
+
+  <!-- ======== ANTIBODY CONFLICT ======== -->
+  <div class="screen" id="screen-antibody-conflict">
+    <header class="app-header">
+      <h1 class="app-title">Duplicate detected</h1>
+    </header>
+    <div class="screen-body">
+      <p class="conflict-desc">Same catalog # and lot # found in existing records.</p>
+      <div class="conflict-grid">
+        <div class="conflict-col">
+          <h4 class="conflict-col__heading">Existing</h4>
+          <div id="conflictExisting" class="conflict-data"></div>
+        </div>
+        <div class="conflict-col">
+          <h4 class="conflict-col__heading">New scan</h4>
+          <div id="conflictNew" class="conflict-data"></div>
+        </div>
+      </div>
+    </div>
+    <div class="actions-sticky">
+      <button class="btn btn--outline btn--full" id="conflictKeepBtn">Keep existing</button>
+      <button class="btn btn--outline btn--full" id="conflictUpdateBtn">Update lot #</button>
+      <button class="btn btn--primary btn--full" id="conflictAddNewBtn">Add as new entry</button>
+      <button class="btn btn--ghost btn--full" id="conflictReviewBtn">Review later</button>
+    </div>
+  </div>
+
+  <!-- ======== HISTOLOGY SCAN ======== -->
+  <div class="screen" id="screen-histology-scan">
+    <div class="status-bar">
+      <span>Histology slides</span>
+      <span id="histTotal">0 scans</span>
+    </div>
+    <div class="camera-slot" id="histCameraSlot"></div>
+    <div class="scan-actions">
+      <button class="btn btn--primary btn--scan" id="histReadBtn">Read label</button>
+      <button class="btn btn--outline btn--scan" id="histTypeBtn">Type it in</button>
+    </div>
+    <div class="undo-strip-wrap">
+      <div class="undo-strip" id="histUndoStrip"></div>
+    </div>
+    <div class="last-scanned-section">
+      <p class="last-scanned__title">Last scanned</p>
+      <ul class="last-scanned__list" id="histLastScannedList"></ul>
+    </div>
+    <nav class="nav-bar">
+      <button class="nav-btn nav-btn--active" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge3">0</span></button>
+      <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
+    </nav>
+  </div>
+
+  <!-- ======== HISTOLOGY RESULT ======== -->
+  <div class="screen" id="screen-histology-result">
+    <header class="app-header">
+      <button class="icon-btn" id="histResultBackBtn" aria-label="Back">‹</button>
+      <h1 class="app-title">Scan result</h1>
+    </header>
+    <div class="screen-body">
+      <div id="histResultCard" class="result-card"></div>
+    </div>
+    <div class="actions-sticky">
+      <button class="btn btn--primary btn--full" id="histConfirmBtn">Confirm and add</button>
+      <button class="btn btn--ghost btn--full" id="histReviewLaterBtn">Review later</button>
+    </div>
+  </div>
+
+  <!-- ======== MANUAL ENTRY ======== -->
+  <div class="screen" id="screen-manual-entry">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back">‹</button>
+      <h1 class="app-title">Manual entry</h1>
+    </header>
+    <div class="screen-body">
+      <p class="muted-text" id="manualReason">Camera unavailable — enter details manually.</p>
+      <div id="manualFormFields"></div>
+      <button class="btn btn--primary btn--full" id="manualSubmitBtn">Add item</button>
+    </div>
+  </div>
+
+  <!-- ======== REVIEW QUEUE ======== -->
+  <div class="screen" id="screen-review-queue">
+    <header class="app-header">
+      <button class="icon-btn" id="reviewBackBtn" aria-label="Back">‹</button>
+      <h1 class="app-title">Review queue</h1>
+      <span class="badge badge--count" id="reviewQueueBadge">0</span>
+    </header>
+    <div class="screen-body">
+      <ul class="review-list" id="reviewList"></ul>
+      <p class="empty-state hidden" id="reviewEmpty">✓ Queue is empty — great work!</p>
+    </div>
+    <nav class="nav-bar">
+      <button class="nav-btn" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn nav-btn--active" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge4">0</span></button>
+      <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
+    </nav>
+  </div>
+
+  <!-- ======== END BOX ======== -->
+  <div class="screen" id="screen-end-box">
+    <div class="screen-body screen-body--center">
+      <div class="success-check">✓</div>
+      <h2 class="success-heading">Box complete</h2>
+      <p class="success-meta" id="endBoxMeta"></p>
+      <div class="btn-stack">
+        <button class="btn btn--primary btn--full" id="nextBoxBtn">Start next box</button>
+        <button class="btn btn--outline btn--full" id="finishSessionBtn">Finish session</button>
+        <button class="btn btn--ghost btn--full" id="keepScanningBtn">← Keep scanning</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== SHEET VIEW ======== -->
+  <div class="screen" id="screen-sheet-view">
+    <header class="app-header">
+      <h1 class="app-title">Sheet</h1>
+      <button class="btn btn--sm" id="downloadBtn">Download</button>
+    </header>
+    <div class="sheet-toolbar">
+      <input type="text" id="sheetSearch" class="input input--search" placeholder="Search…">
+      <div class="legend-row">
+        <span class="legend-chip legend-chip--yellow">Auto-added</span>
+        <span class="legend-chip legend-chip--orange">Corrected</span>
+      </div>
+    </div>
+    <div class="sheet-table-scroll">
+      <table class="sheet-table" id="sheetTable">
+        <thead id="sheetHead"></thead>
+        <tbody id="sheetBody"></tbody>
+      </table>
+    </div>
+    <nav class="nav-bar">
+      <button class="nav-btn" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge5">0</span></button>
+      <button class="nav-btn nav-btn--active" onclick="showScreen('sheet-view')">Sheet</button>
+    </nav>
+  </div>
+
+  <!-- Loading overlay -->
+  <div class="loading-overlay hidden" id="loadingOverlay">
+    <div class="spinner"></div>
+    <p id="loadingMsg">Reading label…</p>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <script src="db.js"></script>
   <script src="api.js"></script>
   <script src="camera.js"></script>
