@@ -33,9 +33,13 @@ async function startCamera(slotId) {
 
     slot.appendChild(container);
     container.classList.remove('hidden');
+    localStorage.setItem('camera_permission', 'granted');
     return true;
   } catch (err) {
     console.error('Camera error:', err);
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      localStorage.setItem('camera_permission', 'denied');
+    }
     return false;
   }
 }

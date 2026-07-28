@@ -188,10 +188,6 @@
     <div class="scan-cap-banner hidden" id="scanCapBanner">
       <i class="ti ti-alert-triangle"></i> Approaching 500-scan limit - 450 reached
     </div>
-    <div class="scan-actions">
-      <button class="btn btn--primary btn--scan" id="boxReadBtn">Read label</button>
-      <button class="btn btn--outline btn--scan" id="boxTypeBtn">Type it in</button>
-    </div>
     <div class="undo-strip-wrap">
       <div class="undo-strip" id="boxUndoStrip"></div>
     </div>
@@ -200,6 +196,11 @@
       <ul class="last-scanned__list" id="boxLastScannedList"></ul>
     </div>
     <button class="btn btn--ghost btn--full end-box-btn" id="endBoxBtn">End box</button>
+    <div class="scan-footer">
+      <p class="camera-note">For permanent camera access, add this app to your home screen via Safari.</p>
+      <button class="scan-type-link" id="boxTypeBtn">Can't scan? Type it in</button>
+      <button class="shutter-btn" id="boxReadBtn"><i class="ti ti-camera"></i> Read label</button>
+    </div>
     <nav class="nav-bar">
       <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>
       <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge1">0</span></button>
@@ -232,16 +233,17 @@
       <span id="abTotal">0 scans</span>
     </div>
     <div class="camera-slot" id="abCameraSlot"></div>
-    <div class="scan-actions">
-      <button class="btn btn--primary btn--scan" id="abReadBtn">Read label</button>
-      <button class="btn btn--outline btn--scan" id="abTypeBtn">Type it in</button>
-    </div>
     <div class="undo-strip-wrap">
       <div class="undo-strip" id="abUndoStrip"></div>
     </div>
     <div class="last-scanned-section">
       <p class="last-scanned__title">Last scanned</p>
       <ul class="last-scanned__list" id="abLastScannedList"></ul>
+    </div>
+    <div class="scan-footer">
+      <p class="camera-note">For permanent camera access, add this app to your home screen via Safari.</p>
+      <button class="scan-type-link" id="abTypeBtn">Can't scan? Type it in</button>
+      <button class="shutter-btn" id="abReadBtn"><i class="ti ti-camera"></i> Read label</button>
     </div>
     <nav class="nav-bar">
       <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>
@@ -287,16 +289,17 @@
       <span id="histTotal">0 scans</span>
     </div>
     <div class="camera-slot" id="histCameraSlot"></div>
-    <div class="scan-actions">
-      <button class="btn btn--primary btn--scan" id="histReadBtn">Read label</button>
-      <button class="btn btn--outline btn--scan" id="histTypeBtn">Type it in</button>
-    </div>
     <div class="undo-strip-wrap">
       <div class="undo-strip" id="histUndoStrip"></div>
     </div>
     <div class="last-scanned-section">
       <p class="last-scanned__title">Last scanned</p>
       <ul class="last-scanned__list" id="histLastScannedList"></ul>
+    </div>
+    <div class="scan-footer">
+      <p class="camera-note">For permanent camera access, add this app to your home screen via Safari.</p>
+      <button class="scan-type-link" id="histTypeBtn">Can't scan? Type it in</button>
+      <button class="shutter-btn" id="histReadBtn"><i class="ti ti-camera"></i> Read label</button>
     </div>
     <nav class="nav-bar">
       <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>
@@ -422,16 +425,17 @@
       <span id="tissueTotal">0 scans</span>
     </div>
     <div class="camera-slot" id="tissueCameraSlot"></div>
-    <div class="scan-actions">
-      <button class="btn btn--primary btn--scan" id="tissueReadBtn">Read label</button>
-      <button class="btn btn--outline btn--scan" id="tissueTypeBtn">Type it in</button>
-    </div>
     <div class="undo-strip-wrap">
       <div class="undo-strip" id="tissueUndoStrip"></div>
     </div>
     <div class="last-scanned-section">
       <p class="last-scanned__title">Last scanned</p>
       <ul class="last-scanned__list" id="tissueLastScannedList"></ul>
+    </div>
+    <div class="scan-footer">
+      <p class="camera-note">For permanent camera access, add this app to your home screen via Safari.</p>
+      <button class="scan-type-link" id="tissueTypeBtn">Can't scan? Type it in</button>
+      <button class="shutter-btn" id="tissueReadBtn"><i class="ti ti-camera"></i> Read label</button>
     </div>
     <nav class="nav-bar">
       <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>

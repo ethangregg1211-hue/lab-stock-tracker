@@ -1121,6 +1121,7 @@ async function init() {
   bindEvents();
   initHome();
   updateReviewBadges();
+  if (window.navigator.standalone) document.body.classList.add('pwa-mode');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
