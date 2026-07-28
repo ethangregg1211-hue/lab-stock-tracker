@@ -73,6 +73,13 @@
             <span class="session-card__desc">Log samples by position in a grid box</span>
           </div>
         </button>
+        <button class="session-card" id="startTissueBtn" disabled>
+          <i class="ti ti-cube session-card__icon"></i>
+          <div class="session-card__content">
+            <span class="session-card__name">Tissue blocks</span>
+            <span class="session-card__desc">Scan wax block and cassette labels</span>
+          </div>
+        </button>
         <button class="session-card" id="startHistologyBtn" disabled>
           <i class="ti ti-microscope session-card__icon"></i>
           <div class="session-card__content">
@@ -114,6 +121,7 @@
           <option value="">Select type...</option>
           <option value="antibody">Antibody stocks</option>
           <option value="box">Box inventory</option>
+          <option value="tissue">Tissue blocks</option>
           <option value="histology">Histology slides</option>
         </select>
       </label>
@@ -386,6 +394,65 @@
       <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge5">0</span></button>
       <button class="nav-btn nav-btn--active" onclick="showScreen('sheet-view')">Sheet</button>
     </nav>
+  </div>
+
+  <!-- ======== ANTIBODY MIDPOINT ======== -->
+  <div class="screen" id="screen-antibody-midpoint">
+    <header class="app-header">
+      <button class="icon-btn" id="abMidpointBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Flip the vial</h1>
+    </header>
+    <div class="screen-body">
+      <p class="muted-text">Rotate the vial and scan the other side to capture any missing fields.</p>
+      <div id="abMidpointPreview"></div>
+    </div>
+    <div class="actions-sticky">
+      <button class="btn btn--primary btn--full" id="abScanOtherSideBtn">Scan other side</button>
+      <button class="btn btn--ghost btn--full" id="abUseFirstScanBtn">Use this scan only</button>
+    </div>
+  </div>
+
+  <!-- ======== TISSUE SCAN ======== -->
+  <div class="screen" id="screen-tissue-scan">
+    <header class="app-header">
+      <button class="icon-btn" id="tissueScanBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Tissue blocks</h1>
+    </header>
+    <div class="status-bar">
+      <span id="tissueTotal">0 scans</span>
+    </div>
+    <div class="camera-slot" id="tissueCameraSlot"></div>
+    <div class="scan-actions">
+      <button class="btn btn--primary btn--scan" id="tissueReadBtn">Read label</button>
+      <button class="btn btn--outline btn--scan" id="tissueTypeBtn">Type it in</button>
+    </div>
+    <div class="undo-strip-wrap">
+      <div class="undo-strip" id="tissueUndoStrip"></div>
+    </div>
+    <div class="last-scanned-section">
+      <p class="last-scanned__title">Last scanned</p>
+      <ul class="last-scanned__list" id="tissueLastScannedList"></ul>
+    </div>
+    <nav class="nav-bar">
+      <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>
+      <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge6">0</span></button>
+      <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
+    </nav>
+  </div>
+
+  <!-- ======== TISSUE RESULT ======== -->
+  <div class="screen" id="screen-tissue-result">
+    <header class="app-header">
+      <button class="icon-btn" id="tissueResultBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Scan result</h1>
+    </header>
+    <div class="screen-body">
+      <div id="tissueResultCard" class="result-card"></div>
+    </div>
+    <div class="actions-sticky">
+      <button class="btn btn--primary btn--full" id="tissueConfirmBtn">Confirm and add</button>
+      <button class="btn btn--ghost btn--full" id="tissueReviewLaterBtn">Review later</button>
+    </div>
   </div>
 
   <!-- Loading overlay -->

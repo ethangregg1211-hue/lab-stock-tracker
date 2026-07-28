@@ -796,6 +796,48 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
 @keyframes spin { to { transform: rotate(360deg); } }
 #loadingMsg { font-size: 14px; font-weight: 500; }
 
+/* ===== ANTIBODY MIDPOINT ===== */
+.midpoint-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.midpoint-section__heading {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.midpoint-found { display: flex; flex-direction: column; gap: 4px; }
+.midpoint-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--green-bg);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.midpoint-chip__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--green);
+  flex-shrink: 0;
+}
+.midpoint-chip__value { color: var(--text); font-weight: 500; }
+.midpoint-missing { display: flex; flex-wrap: wrap; gap: 6px; }
+.midpoint-missing-item {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ===== MISC ===== */
 .hidden { display: none !important; }
 .grid-hint { font-size: 12px; }

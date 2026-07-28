@@ -17,21 +17,40 @@ const FIELDS = {
     { key: 'volume',        label: 'Volume / Amount' },
     { key: 'description',   label: 'Description' },
   ],
+  tissue: [
+    { key: 'study_id',      label: 'Study ID',           required: true },
+    { key: 'sample_number', label: 'Sample number' },
+    { key: 'tissue_site',   label: 'Tissue/site' },
+    { key: 'notes',         label: 'Notes' },
+  ],
   histology: [
-    { key: 'accession_number', label: 'Accession #',     required: true },
-    { key: 'slide_number',     label: 'Slide #' },
-    { key: 'stain',            label: 'Stain type' },
-    { key: 'tissue',           label: 'Tissue type' },
-    { key: 'diagnosis',        label: 'Diagnosis' },
-    { key: 'date',             label: 'Date',            type: 'date' },
-    { key: 'researcher',       label: 'Researcher' },
-    { key: 'block_id',         label: 'Block ID' },
+    { key: 'study',          label: 'Study',             required: true },
+    { key: 'sample_mouse_id', label: 'Sample/Mouse ID' },
+    { key: 'tissue',         label: 'Tissue' },
+    { key: 'stain',          label: 'Stain' },
+    { key: 'notes',          label: 'Notes' },
   ],
 };
 
-const SESSION_LABELS = { antibody: 'Antibody stocks', box: 'Box inventory', histology: 'Histology slides' };
-const SCAN_SCREENS   = { antibody: 'antibody-scan',   box: 'box-scan',      histology: 'histology-scan' };
-const CONFLICT_KEYS  = { antibody: ['catalog_number','lot_number'], histology: ['accession_number','slide_number'] };
+const SESSION_LABELS = {
+  antibody:  'Antibody stocks',
+  box:       'Box inventory',
+  tissue:    'Tissue blocks',
+  histology: 'Histology slides',
+};
+
+const SCAN_SCREENS = {
+  antibody:  'antibody-scan',
+  box:       'box-scan',
+  tissue:    'tissue-scan',
+  histology: 'histology-scan',
+};
+
+const CONFLICT_KEYS = {
+  antibody:  ['catalog_number', 'lot_number'],
+  tissue:    ['study_id', 'sample_number'],
+  histology: ['study', 'sample_mouse_id'],
+};
 
 // ===== STATE =====
 const state = {
@@ -44,6 +63,7 @@ const state = {
   currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   lastScans: [],
   pendingResult: null,
+  pendingScan1: null,
   pendingConflict: null,
   uploadedHeaders: [],
   uploadedRows: [],
@@ -56,8 +76,8 @@ const navStack = [];
 function showScreen(id, pushHistory = true) {
   if (id === state.screen) return;
 
-  const leavingScan = ['box-scan','antibody-scan','histology-scan'].includes(state.screen);
-  const enteringScan = ['box-scan','antibody-scan','histology-scan'].includes(id);
+  const leavingScan = ['box-scan','antibody-scan','tissue-scan','histology-scan'].includes(state.screen);
+  const enteringScan = ['box-scan','antibody-scan','tissue-scan','histology-scan'].includes(id);
   if (leavingScan && !enteringScan) stopCamera();
 
   if (pushHistory) navStack.push(state.screen);
@@ -86,6 +106,7 @@ function _onEnter(id) {
     'box-setup':        initBoxSetup,
     'box-scan':         initBoxScan,
     'antibody-scan':    initAntibodyScan,
+    'tissue-scan':      initTissueScan,
     'histology-scan':   initHistologyScan,
     'review-queue':     renderReviewQueue,
     'sheet-view':       renderSheetView,
@@ -111,21 +132,21 @@ function initHome() {
 }
 
 function updateHomeUploadCard() {
-  const hasFile = state.uploadedHeaders.length > 0;
+  const hasFile  = state.uploadedHeaders.length > 0;
   const emptyEl   = document.getElementById('uploadEmptyState');
   const loadedEl  = document.getElementById('uploadLoadedState');
   const fileNameEl = document.getElementById('uploadedFileNameHome');
 
   if (hasFile) {
-    if (emptyEl)   emptyEl.classList.add('hidden');
-    if (loadedEl)  loadedEl.classList.remove('hidden');
+    if (emptyEl)    emptyEl.classList.add('hidden');
+    if (loadedEl)   loadedEl.classList.remove('hidden');
     if (fileNameEl) fileNameEl.textContent = state.uploadedFileName || 'File loaded';
   } else {
-    if (emptyEl)   emptyEl.classList.remove('hidden');
-    if (loadedEl)  loadedEl.classList.add('hidden');
+    if (emptyEl)    emptyEl.classList.remove('hidden');
+    if (loadedEl)   loadedEl.classList.add('hidden');
   }
 
-  ['startAntibodyBtn', 'startBoxBtn', 'startHistologyBtn'].forEach(id => {
+  ['startAntibodyBtn', 'startBoxBtn', 'startTissueBtn', 'startHistologyBtn'].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = !hasFile;
   });
@@ -141,6 +162,7 @@ function startSession(type) {
     reviewQueue: [],
     lastScans: [],
     pendingResult: null,
+    pendingScan1: null,
     pendingConflict: null,
     currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
@@ -261,9 +283,9 @@ function _updateBoxStatus() {
 }
 
 function _checkScanCap() {
-  const banner = document.getElementById('scanCapBanner');
+  const banner  = document.getElementById('scanCapBanner');
   const over500 = state.totalScans >= 500;
-  ['boxReadBtn','abReadBtn','histReadBtn'].forEach(id => {
+  ['boxReadBtn','abReadBtn','tissueReadBtn','histReadBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = over500;
   });
@@ -277,6 +299,15 @@ async function initAntibodyScan() {
   renderUndoStrip();
   renderLastScanned();
   await startCamera('abCameraSlot');
+}
+
+// ===== TISSUE SCAN =====
+async function initTissueScan() {
+  document.getElementById('tissueTotal').textContent = `${state.totalScans} scans`;
+  _checkScanCap();
+  renderUndoStrip();
+  renderLastScanned();
+  await startCamera('tissueCameraSlot');
 }
 
 // ===== HISTOLOGY SCAN =====
@@ -294,6 +325,44 @@ async function handleReadLabel(sessionType) {
     showManualEntry('Camera unavailable - enter details manually.');
     return;
   }
+
+  // Antibody uses a two-photo flow
+  if (sessionType === 'antibody') {
+    if (state.pendingScan1 === null) {
+      // First photo
+      showLoading('Reading label...');
+      try {
+        const base64 = captureFrame();
+        const result = await readLabelWithClaude(base64, 'antibody');
+        hideLoading();
+        state.pendingScan1 = result;
+        _renderAntibodyMidpoint(result);
+        showScreen('antibody-midpoint');
+      } catch (err) {
+        hideLoading();
+        showManualEntry(err.message);
+      }
+    } else {
+      // Second photo — merge and show result
+      showLoading('Reading other side...');
+      try {
+        const base64 = captureFrame();
+        const result2 = await readLabelWithClaude(base64, 'antibody');
+        hideLoading();
+        const merged = _mergeScanResults(state.pendingScan1, result2);
+        state.pendingScan1   = null;
+        state.pendingResult  = merged;
+        showScreen('box-result');
+        renderResultCard(FIELDS['antibody'], merged, document.getElementById('boxResultCard'));
+      } catch (err) {
+        hideLoading();
+        showManualEntry(err.message);
+      }
+    }
+    return;
+  }
+
+  // Standard single-photo flow
   showLoading('Reading label...');
   try {
     const base64 = captureFrame();
@@ -301,15 +370,74 @@ async function handleReadLabel(sessionType) {
     hideLoading();
     state.pendingResult = result;
 
-    const isHist = sessionType === 'histology';
-    const screenId = isHist ? 'histology-result' : 'box-result';
-    const cardId   = isHist ? 'histResultCard' : 'boxResultCard';
+    const screenMap = { histology: 'histology-result', tissue: 'tissue-result' };
+    const cardMap   = { histology: 'histResultCard',   tissue: 'tissueResultCard' };
+    const screenId  = screenMap[sessionType] || 'box-result';
+    const cardId    = cardMap[sessionType]   || 'boxResultCard';
     showScreen(screenId);
     renderResultCard(FIELDS[sessionType], result, document.getElementById(cardId));
   } catch (err) {
     hideLoading();
     showManualEntry(err.message);
   }
+}
+
+function _mergeScanResults(first, second) {
+  const confRank = { high: 2, medium: 1, low: 0 };
+  const merged   = {};
+  const allKeys  = new Set([...Object.keys(first), ...Object.keys(second)]);
+
+  allKeys.forEach(key => {
+    const f = first[key]  || { value: null, confidence: 'low' };
+    const s = second[key] || { value: null, confidence: 'low' };
+    const fRank = confRank[f.confidence] ?? 0;
+    const sRank = confRank[s.confidence] ?? 0;
+
+    if (sRank > fRank)      merged[key] = s;
+    else if (fRank > sRank) merged[key] = f;
+    else merged[key] = (f.value && !s.value) ? f : (s.value && !f.value) ? s : f;
+  });
+
+  return merged;
+}
+
+function _renderAntibodyMidpoint(result) {
+  const fields   = FIELDS['antibody'];
+  const confRank = { high: 2, medium: 1, low: 0 };
+  const found    = [];
+  const missing  = [];
+
+  fields.forEach(f => {
+    const r    = result[f.key] || { value: null, confidence: 'low' };
+    const rank = confRank[r.confidence] ?? 0;
+    if (rank >= 2 && r.value) found.push({ ...f, value: r.value });
+    else missing.push(f);
+  });
+
+  let html = '';
+
+  if (found.length) {
+    html += `<div class="midpoint-section">
+      <p class="midpoint-section__heading">Found so far</p>
+      <div class="midpoint-found">
+        ${found.map(f => `<div class="midpoint-chip">
+          <span class="midpoint-chip__label">${esc(f.label)}</span>
+          <span class="midpoint-chip__value">${esc(f.value)}</span>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  if (missing.length) {
+    html += `<div class="midpoint-section">
+      <p class="midpoint-section__heading">Still missing</p>
+      <div class="midpoint-missing">
+        ${missing.map(f => `<span class="midpoint-missing-item">${esc(f.label)}</span>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('abMidpointPreview').innerHTML = html;
 }
 
 // ===== MANUAL ENTRY =====
@@ -334,9 +462,9 @@ function renderResultCard(fieldDefs, apiResult, container) {
   const sure = [], uncertain = [], unreadable = [];
   fieldDefs.forEach(f => {
     const r = apiResult[f.key] || { value: null, confidence: 'low' };
-    if (r.confidence === 'high' && r.value)      sure.push({ ...f, value: r.value });
-    else if (r.confidence === 'medium')           uncertain.push({ ...f, value: r.value });
-    else                                          unreadable.push({ ...f });
+    if (r.confidence === 'high' && r.value)  sure.push({ ...f, value: r.value });
+    else if (r.confidence === 'medium')       uncertain.push({ ...f, value: r.value });
+    else                                      unreadable.push({ ...f });
   });
 
   let html = '';
@@ -381,7 +509,7 @@ function renderResultCard(fieldDefs, apiResult, container) {
 }
 
 function _fieldInputHtml(field, kind) {
-  const val = kind === 'uncertain' ? `${esc(field.value || '')}?` : '';
+  const val  = kind === 'uncertain' ? `${esc(field.value || '')}?` : '';
   const hint = kind === 'uncertain' && field.value
     ? `<p class="field-hint">AI read: "${esc(field.value)}"</p>` : '';
   return `<div class="field-row field-row--${kind}">
@@ -394,7 +522,7 @@ function _fieldInputHtml(field, kind) {
 }
 
 function toggleSureSection(headerEl) {
-  const section = headerEl.closest('.result-section');
+  const section  = headerEl.closest('.result-section');
   const expanded = section.querySelector('.result-expanded');
   const toggle   = section.querySelector('.result-toggle');
   if (expanded) expanded.classList.toggle('hidden');
@@ -429,6 +557,7 @@ async function confirmBoxScan(values) {
 }
 
 async function confirmAntibodyScan(values) {
+  state.pendingScan1 = null;
   const conflict = _findConflict('antibody', values);
   if (conflict) {
     state.pendingConflict = { existing: conflict, incoming: values };
@@ -446,6 +575,24 @@ async function confirmAntibodyScan(values) {
   showScreen('antibody-scan', false);
 }
 
+async function confirmTissueScan(values) {
+  const conflict = _findConflict('tissue', values);
+  if (conflict) {
+    state.pendingConflict = { existing: conflict, incoming: values };
+    _renderConflictView();
+    showScreen('antibody-conflict');
+    return;
+  }
+  const item = { type: 'tissue', sessionId: state.sessionId, fields: values, status: 'auto' };
+  const id = await addItemToDB(item);
+  item.id = id;
+  state.items.push(item);
+  state.totalScans++;
+  _pushUndo({ id, displayName: values.study_id || values.sample_number || 'Unknown' });
+  await persistSession();
+  showScreen('tissue-scan', false);
+}
+
 async function confirmHistologyScan(values) {
   const conflict = _findConflict('histology', values);
   if (conflict) {
@@ -458,7 +605,7 @@ async function confirmHistologyScan(values) {
   item.id = id;
   state.items.push(item);
   state.totalScans++;
-  _pushUndo({ id, displayName: values.accession_number || values.slide_number || 'Unknown' });
+  _pushUndo({ id, displayName: values.study || values.sample_mouse_id || 'Unknown' });
   await persistSession();
   showScreen('histology-scan', false);
 }
@@ -498,7 +645,7 @@ function addToReviewQueue(values, reason) {
 function updateReviewBadges() {
   const count = state.reviewQueue.length;
   const text  = count > 0 ? String(count) : '0';
-  ['reviewBadge1','reviewBadge2','reviewBadge3','reviewBadge4','reviewBadge5','reviewQueueBadge'].forEach(id => {
+  ['reviewBadge1','reviewBadge2','reviewBadge3','reviewBadge4','reviewBadge5','reviewBadge6','reviewQueueBadge'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.textContent = text; el.dataset.count = text; }
   });
@@ -552,14 +699,18 @@ function _pushUndo(scan) {
   if (state.lastScans.length > 5) state.lastScans.pop();
   renderUndoStrip();
   renderLastScanned();
-  if (state.sessionType === 'box')       _updateBoxStatus();
-  if (state.sessionType === 'antibody')  { const el = document.getElementById('abTotal');   if (el) el.textContent = `${state.totalScans} scans`; }
-  if (state.sessionType === 'histology') { const el = document.getElementById('histTotal'); if (el) el.textContent = `${state.totalScans} scans`; }
+  if (state.sessionType === 'box') {
+    _updateBoxStatus();
+  } else {
+    const idMap = { antibody: 'abTotal', tissue: 'tissueTotal', histology: 'histTotal' };
+    const el = document.getElementById(idMap[state.sessionType]);
+    if (el) el.textContent = `${state.totalScans} scans`;
+  }
   _checkScanCap();
 }
 
 function renderUndoStrip() {
-  const ids = { antibody: 'abUndoStrip', box: 'boxUndoStrip', histology: 'histUndoStrip' };
+  const ids  = { antibody: 'abUndoStrip', box: 'boxUndoStrip', tissue: 'tissueUndoStrip', histology: 'histUndoStrip' };
   const strip = document.getElementById(ids[state.sessionType]);
   if (!strip) return;
   strip.innerHTML = state.lastScans.map(s =>
@@ -590,7 +741,7 @@ async function undoScan(itemId) {
 }
 
 function renderLastScanned() {
-  const ids = { antibody: 'abLastScannedList', box: 'boxLastScannedList', histology: 'histLastScannedList' };
+  const ids  = { antibody: 'abLastScannedList', box: 'boxLastScannedList', tissue: 'tissueLastScannedList', histology: 'histLastScannedList' };
   const list = document.getElementById(ids[state.sessionType]);
   if (!list) return;
   const showPos = state.sessionType === 'box';
@@ -620,6 +771,7 @@ async function finishSession() {
   Object.assign(state, {
     sessionType: null, sessionId: null, totalScans: 0,
     items: [], reviewQueue: [], lastScans: [],
+    pendingScan1: null,
     currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
   showScreen('home', false);
@@ -633,7 +785,7 @@ function renderSheetView() {
     ? state.items.filter(i => Object.values(i.fields || {}).some(v => String(v).toLowerCase().includes(search)))
     : state.items;
 
-  const extraH = state.sessionType === 'box' ? ['Box','Pos'] : [];
+  const extraH  = state.sessionType === 'box' ? ['Box','Pos'] : [];
   const headers = [...extraH, ...fields.map(f => f.label)];
   document.getElementById('sheetHead').innerHTML =
     `<tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`;
@@ -746,9 +898,10 @@ function bindEvents() {
   });
 
   // Session type buttons
-  document.getElementById('startAntibodyBtn').addEventListener('click', () => startSession('antibody'));
-  document.getElementById('startBoxBtn').addEventListener('click',      () => startSession('box'));
-  document.getElementById('startHistologyBtn').addEventListener('click',() => startSession('histology'));
+  document.getElementById('startAntibodyBtn').addEventListener('click',  () => startSession('antibody'));
+  document.getElementById('startBoxBtn').addEventListener('click',       () => startSession('box'));
+  document.getElementById('startTissueBtn').addEventListener('click',    () => startSession('tissue'));
+  document.getElementById('startHistologyBtn').addEventListener('click', () => startSession('histology'));
 
   // Resume / discard
   document.getElementById('resumeBtn').addEventListener('click',  resumeSessionFromDB);
@@ -810,15 +963,13 @@ function bindEvents() {
     showScreen('box-scan');
   });
 
-  // Box scan back
-  document.getElementById('boxScanBackBtn').addEventListener('click', goBack);
-
   // Box scan
+  document.getElementById('boxScanBackBtn').addEventListener('click', goBack);
   document.getElementById('boxReadBtn').addEventListener('click', () => handleReadLabel('box'));
   document.getElementById('boxTypeBtn').addEventListener('click', () => showManualEntry('Enter box item details manually.'));
   document.getElementById('endBoxBtn').addEventListener('click',  () => showScreen('end-box'));
 
-  // Box result
+  // Box result (shared with antibody result)
   document.getElementById('boxResultBackBtn').addEventListener('click', goBack);
   document.getElementById('boxConfirmBtn').addEventListener('click', async () => {
     const values = collectResultValues(document.getElementById('boxResultCard'));
@@ -834,17 +985,30 @@ function bindEvents() {
     showScanScreen(false);
   });
 
-  // Antibody scan back
-  document.getElementById('abScanBackBtn').addEventListener('click', goBack);
-
   // Antibody scan
+  document.getElementById('abScanBackBtn').addEventListener('click', goBack);
   document.getElementById('abReadBtn').addEventListener('click', () => handleReadLabel('antibody'));
   document.getElementById('abTypeBtn').addEventListener('click', () => showManualEntry('Enter antibody details manually.'));
 
-  // Antibody conflict
+  // Antibody midpoint
+  document.getElementById('abMidpointBackBtn').addEventListener('click', () => {
+    state.pendingScan1 = null;
+    goBack();
+  });
+  document.getElementById('abScanOtherSideBtn').addEventListener('click', () => {
+    showScreen('antibody-scan', false);
+  });
+  document.getElementById('abUseFirstScanBtn').addEventListener('click', () => {
+    state.pendingResult = state.pendingScan1;
+    state.pendingScan1  = null;
+    showScreen('box-result', false);
+    renderResultCard(FIELDS['antibody'], state.pendingResult, document.getElementById('boxResultCard'));
+  });
+
+  // Antibody conflict (shared with tissue conflict)
   document.getElementById('conflictKeepBtn').addEventListener('click', () => {
     state.pendingConflict = null;
-    showScreen('antibody-scan', false);
+    showScanScreen(false);
   });
   document.getElementById('conflictUpdateBtn').addEventListener('click', async () => {
     const { existing, incoming } = state.pendingConflict || {};
@@ -856,33 +1020,51 @@ function bindEvents() {
       await persistSession();
     }
     state.pendingConflict = null;
-    showScreen('antibody-scan', false);
+    showScanScreen(false);
   });
   document.getElementById('conflictAddNewBtn').addEventListener('click', async () => {
     const { incoming } = state.pendingConflict || {};
     if (incoming) {
-      const item = { type: 'antibody', sessionId: state.sessionId, fields: incoming, status: 'auto' };
+      const item = { type: state.sessionType, sessionId: state.sessionId, fields: incoming, status: 'auto' };
       const id   = await addItemToDB(item);
       item.id    = id;
       state.items.push(item);
       state.totalScans++;
-      _pushUndo({ id, displayName: incoming.catalog_number || 'Unknown' });
+      const nameKey = state.sessionType === 'tissue' ? 'study_id' : 'catalog_number';
+      _pushUndo({ id, displayName: incoming[nameKey] || 'Unknown' });
       await persistSession();
     }
     state.pendingConflict = null;
-    showScreen('antibody-scan', false);
+    showScanScreen(false);
   });
   document.getElementById('conflictReviewBtn').addEventListener('click', () => {
     const { incoming } = state.pendingConflict || {};
     if (incoming) addToReviewQueue(incoming, 'conflict');
     state.pendingConflict = null;
-    showScreen('antibody-scan', false);
+    showScanScreen(false);
   });
 
-  // Histology scan back
-  document.getElementById('histScanBackBtn').addEventListener('click', goBack);
+  // Tissue scan
+  document.getElementById('tissueScanBackBtn').addEventListener('click', goBack);
+  document.getElementById('tissueReadBtn').addEventListener('click', () => handleReadLabel('tissue'));
+  document.getElementById('tissueTypeBtn').addEventListener('click', () => showManualEntry('Enter tissue block details manually.'));
+
+  // Tissue result
+  document.getElementById('tissueResultBackBtn').addEventListener('click', goBack);
+  document.getElementById('tissueConfirmBtn').addEventListener('click', async () => {
+    const values = collectResultValues(document.getElementById('tissueResultCard'));
+    await confirmTissueScan(values);
+  });
+  document.getElementById('tissueReviewLaterBtn').addEventListener('click', () => {
+    const card   = document.getElementById('tissueResultCard');
+    const values = collectResultValues(card);
+    const reason = card.querySelector('.field-row--unreadable') ? 'unreadable' : 'uncertain';
+    addToReviewQueue(values, reason);
+    showScreen('tissue-scan', false);
+  });
 
   // Histology scan
+  document.getElementById('histScanBackBtn').addEventListener('click', goBack);
   document.getElementById('histReadBtn').addEventListener('click', () => handleReadLabel('histology'));
   document.getElementById('histTypeBtn').addEventListener('click', () => showManualEntry('Enter histology slide details manually.'));
 
@@ -908,6 +1090,7 @@ function bindEvents() {
     if (req && !values[req.key]) { alert(`${req.label} is required.`); return; }
     if (state.sessionType === 'box')            await confirmBoxScan(values);
     else if (state.sessionType === 'antibody')  await confirmAntibodyScan(values);
+    else if (state.sessionType === 'tissue')    await confirmTissueScan(values);
     else if (state.sessionType === 'histology') await confirmHistologyScan(values);
   });
 

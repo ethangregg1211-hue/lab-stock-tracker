@@ -15,8 +15,12 @@ Example: { "catalog_number": { "value": "ab12345", "confidence": "high" }, "lot_
 sample_name, date, researcher, volume, description.
 For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }`,
 
-  histology: `You are reading a histology slide or cassette label. Extract these fields and return ONLY a valid JSON object, no other text:
-accession_number, slide_number, stain, tissue, diagnosis, date, researcher, block_id.
+  histology: `You are reading a histology slide label. Extract these fields and return ONLY a valid JSON object, no other text:
+study, sample_mouse_id, tissue, stain, notes.
+For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }`,
+
+  tissue: `You are reading a wax tissue block or cassette label. Extract these fields and return ONLY a valid JSON object, no other text:
+study_id, sample_number, tissue_site, notes.
 For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }`,
 };
 

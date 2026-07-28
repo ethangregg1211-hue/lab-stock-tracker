@@ -80,14 +80,17 @@ function guessFieldFromHeader(header, sessionType) {
       description: ['desc', 'description', 'notes', 'content', 'type', 'comment'],
     },
     histology: {
-      accession_number: ['accession', 'accno', 'caseno', 'case', 'patno', 'patientno', 'surgpath'],
-      slide_number:     ['slide', 'slideno', 'section', 'cut', 'blockcutno'],
-      stain:            ['stain', 'staintype', 'dye', 'ihc', 'he', 'special'],
-      tissue:           ['tissue', 'organ', 'site', 'tissuetype', 'specimen'],
-      diagnosis:        ['diagnosis', 'diag', 'pathology', 'finding', 'result'],
-      date:             ['date', 'cutdate', 'staindate', 'prepared', 'processed'],
-      researcher:       ['researcher', 'tech', 'pathologist', 'initials', 'signedby'],
-      block_id:         ['block', 'blockid', 'paraffinblock', 'cassette'],
+      study:          ['study', 'studyid', 'studyno', 'project', 'protocol', 'experiment'],
+      sample_mouse_id: ['sample', 'mouse', 'mouseid', 'sampleid', 'animal', 'animalid', 'subject'],
+      tissue:         ['tissue', 'organ', 'site', 'tissuetype', 'specimen'],
+      stain:          ['stain', 'staintype', 'dye', 'ihc', 'he', 'special'],
+      notes:          ['notes', 'note', 'comment', 'comments', 'remark', 'diagnosis', 'finding'],
+    },
+    tissue: {
+      study_id:      ['study', 'studyid', 'studyno', 'project', 'protocol', 'experiment'],
+      sample_number: ['sample', 'sampleno', 'sampleid', 'specimen', 'no', 'number', 'id', 'block'],
+      tissue_site:   ['tissue', 'site', 'organ', 'location', 'tissuetype', 'tissueside'],
+      notes:         ['notes', 'note', 'comment', 'comments', 'remark', 'desc', 'description'],
     },
   };
 
