@@ -3,22 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#185FA5">
+  <meta name="theme-color" content="#185FA5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Lab Stock Tracker</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
 
-  <!-- Shared camera container — moved into scan screens via JS -->
+  <!-- Shared camera container - moved into scan screens via JS -->
   <div id="cameraContainer" class="camera-container hidden">
     <video id="scannerVideo" autoplay playsinline muted></video>
     <canvas id="scannerCanvas" hidden></canvas>
     <div class="camera-controls-overlay">
-      <button class="cam-btn" id="flashBtn" aria-label="Torch">⚡</button>
-      <button class="cam-btn" id="focusBtn" aria-label="Focus">◎</button>
+      <button class="cam-btn" id="flashBtn" aria-label="Torch"><i class="ti ti-bolt"></i></button>
+      <button class="cam-btn" id="focusBtn" aria-label="Focus"><i class="ti ti-focus-2"></i></button>
     </div>
     <div class="viewfinder-frame"></div>
   </div>
@@ -27,7 +29,7 @@
   <div class="screen active" id="screen-home">
     <header class="app-header">
       <h1 class="app-title">Lab Stock Tracker</h1>
-      <button class="icon-btn" id="settingsBtn" aria-label="Settings">⚙</button>
+      <button class="icon-btn" id="settingsBtn" aria-label="Settings"><i class="ti ti-settings"></i></button>
     </header>
     <div class="screen-body">
 
@@ -41,34 +43,52 @@
         </div>
       </div>
 
+      <!-- Upload card -->
+      <div class="upload-card" id="uploadCard">
+        <div id="uploadEmptyState">
+          <p class="upload-card__text">Upload a sheet to begin</p>
+          <button class="btn btn--primary" id="uploadExcelBtn">Upload</button>
+        </div>
+        <div id="uploadLoadedState" class="upload-card__loaded-row hidden">
+          <i class="ti ti-file-spreadsheet upload-card__file-icon"></i>
+          <span class="upload-card__filename" id="uploadedFileNameHome"></span>
+          <span class="badge badge--loaded">Loaded</span>
+        </div>
+      </div>
+      <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" hidden>
+
       <h2 class="section-heading">New session</h2>
       <div class="session-list">
-        <button class="session-btn" id="startAntibodyBtn">
-          <span class="session-icon">🧬</span>
-          <span class="session-label">Antibody stocks</span>
-          <span class="chevron">›</span>
+        <button class="session-card" id="startAntibodyBtn" disabled>
+          <i class="ti ti-test-pipe session-card__icon"></i>
+          <div class="session-card__content">
+            <span class="session-card__name">Antibody stocks</span>
+            <span class="session-card__desc">Track vials, lot numbers, and expiry dates</span>
+          </div>
         </button>
-        <button class="session-btn" id="startBoxBtn">
-          <span class="session-icon">📦</span>
-          <span class="session-label">Box inventory</span>
-          <span class="chevron">›</span>
+        <button class="session-card" id="startBoxBtn" disabled>
+          <i class="ti ti-box session-card__icon"></i>
+          <div class="session-card__content">
+            <span class="session-card__name">Box inventory</span>
+            <span class="session-card__desc">Log samples by position in a grid box</span>
+          </div>
         </button>
-        <button class="session-btn" id="startHistologyBtn">
-          <span class="session-icon">🔬</span>
-          <span class="session-label">Histology slides</span>
-          <span class="chevron">›</span>
+        <button class="session-card" id="startHistologyBtn" disabled>
+          <i class="ti ti-microscope session-card__icon"></i>
+          <div class="session-card__content">
+            <span class="session-card__name">Histology slides</span>
+            <span class="session-card__desc">Record slides, stains, and accession numbers</span>
+          </div>
         </button>
-        <button class="session-btn session-btn--disabled" disabled>
-          <span class="session-icon">❄</span>
-          <span class="session-label">Freezer rack inventory</span>
+        <button class="session-card session-card--phase2" disabled>
+          <i class="ti ti-snowflake session-card__icon"></i>
+          <div class="session-card__content">
+            <span class="session-card__name">Freezer rack inventory</span>
+            <span class="session-card__desc">Map rack positions and sample locations</span>
+          </div>
           <span class="badge badge--phase2">Phase 2</span>
         </button>
       </div>
-
-      <div class="divider"></div>
-      <p class="muted-text">Have an existing spreadsheet?</p>
-      <button class="btn btn--outline btn--full" id="uploadExcelBtn">Upload Excel file</button>
-      <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" hidden>
     </div>
 
     <!-- Settings bottom sheet -->
@@ -91,7 +111,7 @@
   <!-- ======== COLUMN MAPPING ======== -->
   <div class="screen" id="screen-column-mapping">
     <header class="app-header">
-      <button class="icon-btn" data-back aria-label="Back">‹</button>
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Map columns</h1>
     </header>
     <div class="screen-body">
@@ -99,7 +119,7 @@
       <label class="field-group">
         <span class="field-label">Session type</span>
         <select id="mappingSessionType" class="input">
-          <option value="">Select type…</option>
+          <option value="">Select type...</option>
           <option value="antibody">Antibody stocks</option>
           <option value="box">Box inventory</option>
           <option value="histology">Histology slides</option>
@@ -123,7 +143,7 @@
   <!-- ======== BOX SETUP ======== -->
   <div class="screen" id="screen-box-setup">
     <header class="app-header">
-      <button class="icon-btn" data-back aria-label="Back">‹</button>
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Box setup</h1>
     </header>
     <div class="screen-body">
@@ -138,9 +158,9 @@
       <div class="field-group">
         <span class="field-label">Box size</span>
         <div class="size-picker" id="sizePicker">
-          <button class="size-btn" data-size="7x7">7 × 7</button>
-          <button class="size-btn" data-size="9x9">9 × 9</button>
-          <button class="size-btn" data-size="10x10">10 × 10</button>
+          <button class="size-btn" data-size="7x7">7 x 7</button>
+          <button class="size-btn" data-size="9x9">9 x 9</button>
+          <button class="size-btn" data-size="10x10">10 x 10</button>
         </div>
       </div>
       <div class="grid-preview-wrap">
@@ -155,14 +175,18 @@
 
   <!-- ======== BOX SCAN ======== -->
   <div class="screen" id="screen-box-scan">
+    <header class="app-header">
+      <button class="icon-btn" id="boxScanBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Box inventory</h1>
+    </header>
     <div class="status-bar" id="boxStatusBar">
-      <span id="bsBox">Box —</span>
-      <span id="bsPos">— / —</span>
+      <span id="bsBox">Box -</span>
+      <span id="bsPos">- / -</span>
       <span id="bsTotal">0 scans</span>
     </div>
     <div class="camera-slot" id="boxCameraSlot"></div>
     <div class="scan-cap-banner hidden" id="scanCapBanner">
-      ⚠ Approaching 500-scan limit — 450 reached
+      <i class="ti ti-alert-triangle"></i> Approaching 500-scan limit - 450 reached
     </div>
     <div class="scan-actions">
       <button class="btn btn--primary btn--scan" id="boxReadBtn">Read label</button>
@@ -177,7 +201,7 @@
     </div>
     <button class="btn btn--ghost btn--full end-box-btn" id="endBoxBtn">End box</button>
     <nav class="nav-bar">
-      <button class="nav-btn nav-btn--active" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>
       <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge1">0</span></button>
       <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
     </nav>
@@ -186,7 +210,7 @@
   <!-- ======== BOX RESULT ======== -->
   <div class="screen" id="screen-box-result">
     <header class="app-header">
-      <button class="icon-btn" id="boxResultBackBtn" aria-label="Back">‹</button>
+      <button class="icon-btn" id="boxResultBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Scan result</h1>
     </header>
     <div class="screen-body">
@@ -200,8 +224,11 @@
 
   <!-- ======== ANTIBODY SCAN ======== -->
   <div class="screen" id="screen-antibody-scan">
+    <header class="app-header">
+      <button class="icon-btn" id="abScanBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Antibody stocks</h1>
+    </header>
     <div class="status-bar">
-      <span>Antibody stocks</span>
       <span id="abTotal">0 scans</span>
     </div>
     <div class="camera-slot" id="abCameraSlot"></div>
@@ -217,7 +244,7 @@
       <ul class="last-scanned__list" id="abLastScannedList"></ul>
     </div>
     <nav class="nav-bar">
-      <button class="nav-btn nav-btn--active" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>
       <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge2">0</span></button>
       <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
     </nav>
@@ -226,6 +253,7 @@
   <!-- ======== ANTIBODY CONFLICT ======== -->
   <div class="screen" id="screen-antibody-conflict">
     <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Duplicate detected</h1>
     </header>
     <div class="screen-body">
@@ -251,8 +279,11 @@
 
   <!-- ======== HISTOLOGY SCAN ======== -->
   <div class="screen" id="screen-histology-scan">
+    <header class="app-header">
+      <button class="icon-btn" id="histScanBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Histology slides</h1>
+    </header>
     <div class="status-bar">
-      <span>Histology slides</span>
       <span id="histTotal">0 scans</span>
     </div>
     <div class="camera-slot" id="histCameraSlot"></div>
@@ -268,7 +299,7 @@
       <ul class="last-scanned__list" id="histLastScannedList"></ul>
     </div>
     <nav class="nav-bar">
-      <button class="nav-btn nav-btn--active" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>
       <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge3">0</span></button>
       <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
     </nav>
@@ -277,7 +308,7 @@
   <!-- ======== HISTOLOGY RESULT ======== -->
   <div class="screen" id="screen-histology-result">
     <header class="app-header">
-      <button class="icon-btn" id="histResultBackBtn" aria-label="Back">‹</button>
+      <button class="icon-btn" id="histResultBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Scan result</h1>
     </header>
     <div class="screen-body">
@@ -292,11 +323,11 @@
   <!-- ======== MANUAL ENTRY ======== -->
   <div class="screen" id="screen-manual-entry">
     <header class="app-header">
-      <button class="icon-btn" data-back aria-label="Back">‹</button>
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Manual entry</h1>
     </header>
     <div class="screen-body">
-      <p class="muted-text" id="manualReason">Camera unavailable — enter details manually.</p>
+      <p class="muted-text" id="manualReason">Camera unavailable - enter details manually.</p>
       <div id="manualFormFields"></div>
       <button class="btn btn--primary btn--full" id="manualSubmitBtn">Add item</button>
     </div>
@@ -305,16 +336,16 @@
   <!-- ======== REVIEW QUEUE ======== -->
   <div class="screen" id="screen-review-queue">
     <header class="app-header">
-      <button class="icon-btn" id="reviewBackBtn" aria-label="Back">‹</button>
+      <button class="icon-btn" id="reviewBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Review queue</h1>
       <span class="badge badge--count" id="reviewQueueBadge">0</span>
     </header>
     <div class="screen-body">
       <ul class="review-list" id="reviewList"></ul>
-      <p class="empty-state hidden" id="reviewEmpty">✓ Queue is empty — great work!</p>
+      <p class="empty-state hidden" id="reviewEmpty">Queue is empty - great work!</p>
     </div>
     <nav class="nav-bar">
-      <button class="nav-btn" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn" onclick="showScanScreen(false)">Scanner</button>
       <button class="nav-btn nav-btn--active" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge4">0</span></button>
       <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
     </nav>
@@ -322,14 +353,18 @@
 
   <!-- ======== END BOX ======== -->
   <div class="screen" id="screen-end-box">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Box complete</h1>
+    </header>
     <div class="screen-body screen-body--center">
-      <div class="success-check">✓</div>
+      <div class="success-check"><i class="ti ti-check"></i></div>
       <h2 class="success-heading">Box complete</h2>
       <p class="success-meta" id="endBoxMeta"></p>
       <div class="btn-stack">
         <button class="btn btn--primary btn--full" id="nextBoxBtn">Start next box</button>
         <button class="btn btn--outline btn--full" id="finishSessionBtn">Finish session</button>
-        <button class="btn btn--ghost btn--full" id="keepScanningBtn">← Keep scanning</button>
+        <button class="btn btn--ghost btn--full" id="keepScanningBtn">Keep scanning</button>
       </div>
     </div>
   </div>
@@ -337,11 +372,12 @@
   <!-- ======== SHEET VIEW ======== -->
   <div class="screen" id="screen-sheet-view">
     <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Sheet</h1>
       <button class="btn btn--sm" id="downloadBtn">Download</button>
     </header>
     <div class="sheet-toolbar">
-      <input type="text" id="sheetSearch" class="input input--search" placeholder="Search…">
+      <input type="text" id="sheetSearch" class="input input--search" placeholder="Search...">
       <div class="legend-row">
         <span class="legend-chip legend-chip--yellow">Auto-added</span>
         <span class="legend-chip legend-chip--orange">Corrected</span>
@@ -354,7 +390,7 @@
       </table>
     </div>
     <nav class="nav-bar">
-      <button class="nav-btn" onclick="showScanScreen()">Scanner</button>
+      <button class="nav-btn" onclick="showScanScreen(false)">Scanner</button>
       <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge5">0</span></button>
       <button class="nav-btn nav-btn--active" onclick="showScreen('sheet-view')">Sheet</button>
     </nav>
@@ -363,7 +399,7 @@
   <!-- Loading overlay -->
   <div class="loading-overlay hidden" id="loadingOverlay">
     <div class="spinner"></div>
-    <p id="loadingMsg">Reading label…</p>
+    <p id="loadingMsg">Reading label...</p>
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>

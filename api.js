@@ -24,7 +24,7 @@ const _offlineQueue = [];
 
 async function readLabelWithClaude(base64Image, sessionType) {
   const apiKey = getApiKey();
-  if (!apiKey) throw new Error('No API key configured — tap ⚙ to add it.');
+  if (!apiKey) throw new Error('No API key configured - open Settings to add it.');
 
   if (!navigator.onLine) {
     _offlineQueue.push({ base64Image, sessionType, ts: Date.now() });
