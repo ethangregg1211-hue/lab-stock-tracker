@@ -509,7 +509,7 @@ function renderResultCard(fieldDefs, apiResult, container) {
 }
 
 function _fieldInputHtml(field, kind) {
-  const val  = kind === 'uncertain' ? `${esc(field.value || '')}?` : '';
+  const val  = kind === 'uncertain' ? esc(field.value || '') : '';
   const hint = kind === 'uncertain' && field.value
     ? `<p class="field-hint">AI read: "${esc(field.value)}"</p>` : '';
   return `<div class="field-row field-row--${kind}">
@@ -532,7 +532,7 @@ function toggleSureSection(headerEl) {
 function collectResultValues(cardEl) {
   const values = {};
   cardEl.querySelectorAll('.field-input').forEach(input => {
-    values[input.name] = input.value.replace(/\?$/, '').trim();
+    values[input.name] = input.value.trim();
   });
   return values;
 }

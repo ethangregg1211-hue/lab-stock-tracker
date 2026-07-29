@@ -467,8 +467,17 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
   pointer-events: none;
 }
 
-.camera-slot { flex-shrink: 0; background: #111; min-height: 200px; }
-.camera-slot:empty { min-height: 0; }
+.camera-slot { flex-shrink: 0; background: #111; height: 200px; }
+.camera-slot:empty { height: 0; }
+
+#screen-box-scan,
+#screen-antibody-scan,
+#screen-histology-scan,
+#screen-tissue-scan {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
 
 /* ===== SCAN CAP BANNER ===== */
 .scan-cap-banner {
@@ -781,8 +790,8 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
   font-size: 11px;
   font-weight: 600;
 }
-.legend-chip--yellow { background: #FFEFC0; color: #78350f; }
-.legend-chip--orange { background: #FFD9B3; color: #7c2d12; }
+.legend-chip--yellow { background: #FFE082; color: #78350f; }
+.legend-chip--orange { background: #FFCC80; color: #7c2d12; }
 
 .sheet-table-scroll { flex: 1; overflow: auto; }
 .sheet-table {
@@ -811,8 +820,10 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sheet-table tr.row--auto { background: #FFEFC0; }
-.sheet-table tr.row--corrected { background: #FFD9B3; }
+.sheet-table tr.row--auto { background: #FFE082; box-shadow: inset 3px 0 0 #F59E0B; }
+.sheet-table tr.row--auto td { color: #1a1a1a; font-weight: 500; }
+.sheet-table tr.row--corrected { background: #FFCC80; box-shadow: inset 3px 0 0 #F97316; }
+.sheet-table tr.row--corrected td { color: #1a1a1a; font-weight: 500; }
 .sheet-table tr:active { opacity: 0.7; }
 
 /* ===== MANUAL ENTRY ===== */

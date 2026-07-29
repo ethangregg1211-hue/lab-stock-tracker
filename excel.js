@@ -42,7 +42,7 @@ function exportToExcel(items, sessionType, filename) {
   // Apply row fill: yellow for auto-added (#FFEFC0), orange for corrected (#FFD9B3)
   items.forEach((item, i) => {
     const rowIdx = i + 1; // 0 = header
-    const rgb = item.status === 'corrected' ? 'FFD9B3' : 'FFEFC0';
+    const rgb = item.status === 'corrected' ? 'FFCC80' : 'FFE082';
     const fill = { patternType: 'solid', fgColor: { rgb } };
     for (let c = 0; c < headers.length; c++) {
       const ref = XLSX.utils.encode_cell({ r: rowIdx, c });

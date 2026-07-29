@@ -2,6 +2,12 @@ function getApiKey() {
   return localStorage.getItem('anthropic_api_key') || '';
 }
 
+const SHARED_RULES = `
+Rules:
+- Only return values you can actually read from the label. Do not invent or guess values not visible.
+- Never append "?" to any value. Use the confidence field to communicate uncertainty, not punctuation.
+- If a field is uncertain, return the value you found as-is with confidence "medium" or "low".`;
+
 const PROMPTS = {
   antibody: `You are reading a lab reagent or antibody vial label. Extract these fields and return ONLY a valid JSON object, no other text:
 catalog_number, lot_number, target, host_species, clone, concentration, expiry, storage.
@@ -9,19 +15,21 @@ For every field return an object: { "value": "<string or null>", "confidence": "
 - "high"   = clearly legible text
 - "medium" = partially readable, faded, or inferred from context
 - "low"    = not found or completely unreadable
-Example: { "catalog_number": { "value": "ab12345", "confidence": "high" }, "lot_number": { "value": null, "confidence": "low" }, ... }`,
+Example: { "catalog_number": { "value": "ab12345", "confidence": "high" }, "lot_number": { "value": null, "confidence": "low" }, ... }${SHARED_RULES}`,
 
   box: `You are reading a lab sample tube, cryovial, or storage box label. Extract these fields and return ONLY a valid JSON object, no other text:
 sample_name, date, researcher, volume, description.
-For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }`,
+For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }${SHARED_RULES}`,
 
   histology: `You are reading a histology slide label. Extract these fields and return ONLY a valid JSON object, no other text:
 study, sample_mouse_id, tissue, stain, notes.
-For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }`,
+For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }${SHARED_RULES}`,
 
   tissue: `You are reading a wax tissue block or cassette label. Extract these fields and return ONLY a valid JSON object, no other text:
 study_id, sample_number, tissue_site, notes.
-For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }`,
+For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }
+Field format constraints:
+- sample_number: must match the format # followed by 1 or 2 digits (examples: #1, #8, #23). If you cannot find a value matching this exact format on the label, return null with confidence "low". Do not guess.${SHARED_RULES}`,
 };
 
 const _offlineQueue = [];
