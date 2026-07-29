@@ -1106,7 +1106,7 @@ function bindEvents() {
   document.getElementById('sheetSearch').addEventListener('input', renderSheetView);
   document.getElementById('downloadBtn').addEventListener('click', () => {
     if (state.reviewQueue.length) { alert('Clear the review queue before downloading.'); return; }
-    const name = prompt('Filename:', `lab-stock-${new Date().toISOString().slice(0,10)}.xlsx`);
+    const name = prompt('Filename:', `labscan-${new Date().toISOString().slice(0,10)}.xlsx`);
     if (name !== null) exportToExcel(state.items, state.sessionType, name);
   });
 

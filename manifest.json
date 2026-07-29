@@ -1,6 +1,6 @@
 {
-  "name": "Lab Stock Tracker",
-  "short_name": "LabStock",
+  "name": "LabScan",
+  "short_name": "LabScan",
   "description": "Track and manage lab inventory from your phone",
   "start_url": "/",
   "display": "standalone",
