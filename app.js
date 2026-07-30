@@ -1338,7 +1338,12 @@ function bindEvents() {
 
   // Settings drawer
   document.getElementById('settingsBtn').addEventListener('click', () => {
-    document.getElementById('apiKeyInput').value = localStorage.getItem('anthropic_api_key') || '';
+    document.getElementById('apiKeyInput').value  = localStorage.getItem('anthropic_api_key') || '';
+    document.getElementById('chemPiCode').value   = localStorage.getItem('chem_pi_code')  || '';
+    document.getElementById('chemPiLast').value   = localStorage.getItem('chem_pi_last')  || '';
+    document.getElementById('chemPiFirst').value  = localStorage.getItem('chem_pi_first') || '';
+    document.getElementById('chemBldg').value     = localStorage.getItem('chem_bldg')     || '';
+    document.getElementById('chemLab').value      = localStorage.getItem('chem_lab')      || '';
     document.getElementById('settingsDrawer').classList.remove('hidden');
   });
   ['settingsBackdrop','closeSettingsBtn'].forEach(id =>
@@ -1349,6 +1354,17 @@ function bindEvents() {
   document.getElementById('saveApiKeyBtn').addEventListener('click', () => {
     const k = document.getElementById('apiKeyInput').value.trim();
     if (k) localStorage.setItem('anthropic_api_key', k);
+    const chemFields = {
+      chem_pi_code:  'chemPiCode',
+      chem_pi_last:  'chemPiLast',
+      chem_pi_first: 'chemPiFirst',
+      chem_bldg:     'chemBldg',
+      chem_lab:      'chemLab',
+    };
+    Object.entries(chemFields).forEach(([lsKey, elId]) => {
+      const v = document.getElementById(elId).value.trim();
+      if (v) localStorage.setItem(lsKey, v);
+    });
     document.getElementById('settingsDrawer').classList.add('hidden');
   });
 
@@ -1594,8 +1610,20 @@ function bindEvents() {
   document.getElementById('sheetSearch').addEventListener('input', renderSheetView);
   document.getElementById('downloadBtn').addEventListener('click', () => {
     if (state.reviewQueue.length) { alert('Clear the review queue before downloading.'); return; }
-    const name = prompt('Filename:', `labscan-${new Date().toISOString().slice(0,10)}.xlsx`);
-    if (name !== null) exportToExcel(state.items, state.sessionType, name);
+
+    if (state.sessionType === 'chemical') {
+      const unreconciled = state.items.filter(i => i.type === 'chemical' && !i.presentConfirmed).length;
+      if (unreconciled) {
+        const ok = confirm(`${unreconciled} chemical${unreconciled !== 1 ? 's' : ''} haven't been reconciled yet — export anyway?`);
+        if (!ok) return;
+      }
+      const date = new Date().toISOString().slice(0, 10);
+      const name = prompt('Filename:', `chemical-import-${date}.xlsx`);
+      if (name !== null) exportChemicalTemplate(state.items.filter(i => i.type === 'chemical'), name);
+    } else {
+      const name = prompt('Filename:', `labscan-${new Date().toISOString().slice(0,10)}.xlsx`);
+      if (name !== null) exportToExcel(state.items, state.sessionType, name);
+    }
   });
 
   // Camera controls

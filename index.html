@@ -106,6 +106,27 @@
           <span class="field-label">Anthropic API Key</span>
           <input type="password" id="apiKeyInput" class="input" placeholder="sk-ant-...">
         </label>
+        <p class="field-label" style="margin-top:20px;margin-bottom:10px">Chemical import defaults</p>
+        <label class="field-group">
+          <span class="field-label">PI Code</span>
+          <input type="text" id="chemPiCode" class="input" placeholder="e.g. SMIT001" autocomplete="off">
+        </label>
+        <label class="field-group">
+          <span class="field-label">PI Last Name</span>
+          <input type="text" id="chemPiLast" class="input" placeholder="" autocomplete="off">
+        </label>
+        <label class="field-group">
+          <span class="field-label">PI First Name</span>
+          <input type="text" id="chemPiFirst" class="input" placeholder="" autocomplete="off">
+        </label>
+        <label class="field-group">
+          <span class="field-label">Bldg Code</span>
+          <input type="text" id="chemBldg" class="input" placeholder="e.g. NSB" autocomplete="off">
+        </label>
+        <label class="field-group">
+          <span class="field-label">Default Lab</span>
+          <input type="text" id="chemLab" class="input" placeholder="e.g. 204" autocomplete="off">
+        </label>
         <div class="btn-row">
           <button class="btn btn--primary" id="saveApiKeyBtn">Save</button>
           <button class="btn btn--ghost" id="closeSettingsBtn">Close</button>

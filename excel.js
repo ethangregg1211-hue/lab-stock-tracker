@@ -59,6 +59,69 @@ function exportToExcel(items, sessionType, filename) {
   XLSX.writeFile(wb, filename || `labscan-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
+function exportChemicalTemplate(items, filename) {
+  if (!window.XLSX) { alert('Excel library not loaded.'); return; }
+
+  const HEADERS = [
+    'PI CODE','PI Last Name','PI First Name','Bldg Code','LAB',
+    'Storage Location','Sub-Storage Location','Storage Requirements','Storage Device',
+    'Chemical Name','Physical State','# of Containers','Amount per Container','Unit of Measure',
+    'CAS #','Chemical Formula','Molecular Weight','Vendor','Catalog #','PO#',
+    'Receipt Date','Open Date','MAX on Hand','Expiration Date','Contact','Comments',
+    'MSDS Year','Date Entered','BARCODE','LAST_CHANGED','CONCENTRATION',
+    'Chemical Number','Lot Number','Multiple CAS (comma delimited)','MSDS URL',
+    'Order Date','Will Expire?',
+  ];
+
+  // Row 2: internal field names — must never be modified
+  const FIELD_NAMES = [
+    'researcher','last_name','first_name','building','lab',
+    'storage_location','sub_storage_location','storage_requirements','storage_device',
+    'chemical_description','physical_state','receipt_quantity','unit','chemical_unit',
+    'cas_num','chemical_formula','molecular_weight','vendor','catalog_number','po_number',
+    'receipt_date','open_date','max_on_hand','expiration_date','contact','comments',
+    '','date_entered','ship_code','last_updated','concentration',
+    'chemical_number','lot_number','multiple_cas','msds_url',
+    'order_date','will_expire',
+  ];
+
+  const piCode  = localStorage.getItem('chem_pi_code')  || '';
+  const piLast  = localStorage.getItem('chem_pi_last')  || '';
+  const piFirst = localStorage.getItem('chem_pi_first') || '';
+  const bldg    = localStorage.getItem('chem_bldg')     || '';
+  const defLab  = localStorage.getItem('chem_lab')      || '';
+
+  const dataRows = items.map(f => {
+    const d = f.fields || {};
+    return [
+      piCode, piLast, piFirst, bldg,
+      d.lab || defLab,
+      d.storage_location || '', '', '', d.storage_device || '',
+      d.chemical_description || '', d.physical_state || '',
+      d.receipt_quantity || '', d.unit || '', d.chemical_unit || '',
+      d.cas_num || '', '', '', d.vendor || '', d.catalog_number || '', '',
+      d.receipt_date || '', '', '', '', '', '',
+      '', '', '', '', d.concentration || '',
+      '', d.lot_number || '', '', '',
+      '', '',
+    ];
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([HEADERS, FIELD_NAMES, ...dataRows]);
+
+  // Hide the field-names row (row index 1, 0-based)
+  ws['!rows'] = [undefined, { hidden: true }];
+
+  // Column widths — wider for text fields
+  ws['!cols'] = HEADERS.map((h, i) => ({
+    wch: ['Chemical Name','Storage Location','PI Last Name','PI First Name'].includes(h) ? 24 : 14,
+  }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  XLSX.writeFile(wb, filename || `chemical-import-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
 function guessFieldFromHeader(header, sessionType) {
   const h = header.toLowerCase().replace(/[\s_\-#.()]/g, '');
   const maps = {
@@ -91,6 +154,21 @@ function guessFieldFromHeader(header, sessionType) {
       sample_number: ['sample', 'sampleno', 'sampleid', 'specimen', 'no', 'number', 'id', 'block'],
       tissue_site:   ['tissue', 'site', 'organ', 'location', 'tissuetype', 'tissueside'],
       notes:         ['notes', 'note', 'comment', 'comments', 'remark', 'desc', 'description'],
+    },
+    chemical: {
+      chemical_description: ['chemicalname', 'chemical', 'chemname', 'name', 'description', 'chemical_description'],
+      cas_num:              ['cas', 'casnumber', 'casno', 'casnum', 'cas#'],
+      catalog_number:       ['catalog', 'catalogno', 'catno', 'cat', 'catalognum', 'catalog#'],
+      vendor:               ['vendor', 'supplier', 'manufacturer', 'mfr', 'company'],
+      physical_state:       ['physicalstate', 'state', 'form', 'phase'],
+      receipt_quantity:     ['containers', 'ofcontainers', 'qty', 'quantity', 'count', 'number'],
+      unit:                 ['amountper', 'amount', 'amtper', 'size'],
+      chemical_unit:        ['unitofmeasure', 'uom', 'units', 'unitofmeas'],
+      storage_location:     ['storagelocation', 'inlablocation', 'location', 'storage', 'inlab', 'loc'],
+      storage_device:       ['storagedevice', 'device', 'locationtype', 'cabinet', 'fridge', 'freezer'],
+      receipt_date:         ['receiptdate', 'received', 'daterecvd', 'receiveddate', 'datereceived'],
+      lot_number:           ['lot', 'lotnumber', 'lotno', 'lot#', 'batch'],
+      concentration:        ['concentration', 'conc', 'concn', 'purity'],
     },
   };
 
