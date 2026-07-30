@@ -153,6 +153,7 @@ function _onEnter(id) {
     'histology-scan':        initHistologyScan,
     'chemical-scan':         initChemicalScan,
     'chemical-new-details':  initChemicalNewDetails,
+    'chemical-reconcile':    renderChemicalReconcile,
     'review-queue':          renderReviewQueue,
     'sheet-view':            renderSheetView,
     'end-box':               renderEndBox,
@@ -566,6 +567,83 @@ async function confirmChemicalNew() {
   _pushUndo({ id, displayName: fields.chemical_description || 'Unknown', chemMatched: false });
   await persistSession();
   showScreen('chemical-scan', false);
+}
+
+// ===== CHEMICAL RECONCILE =====
+function renderChemicalReconcile() {
+  const pending = state.items.filter(i => i.type === 'chemical' && !i.presentConfirmed);
+  const list    = document.getElementById('chemReconcileList');
+  const empty   = document.getElementById('chemReconcileEmpty');
+
+  if (!pending.length) {
+    if (list)  list.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (empty) empty.classList.add('hidden');
+
+  list.innerHTML = pending.map(item => {
+    const staged = state.chemRemovalStaging[item.id];
+    const keepCls   = staged === 'keep'   ? 'btn--primary' : 'btn--outline';
+    const removeCls = staged === 'remove' ? 'btn--primary' : 'btn--outline';
+    return `<li class="review-item">
+      <div class="review-item__header">
+        <span class="review-item__name">${esc(item.fields.chemical_description || 'Unknown chemical')}</span>
+      </div>
+      <p class="review-item__meta">${esc(item.fields.storage_location || '')}</p>
+      <div class="review-item__actions">
+        <button class="btn ${keepCls}"   onclick="stageChemReconcile(${item.id},'keep')">Still present</button>
+        <button class="btn ${removeCls}" onclick="stageChemReconcile(${item.id},'remove')">Remove</button>
+      </div>
+    </li>`;
+  }).join('');
+}
+
+function stageChemReconcile(id, choice) {
+  state.chemRemovalStaging[id] = choice;
+  persistSession();
+  renderChemicalReconcile();
+}
+
+function stageAllChemReconcile(choice) {
+  state.items
+    .filter(i => i.type === 'chemical' && !i.presentConfirmed)
+    .forEach(i => { state.chemRemovalStaging[i.id] = choice; });
+  persistSession();
+  renderChemicalReconcile();
+}
+
+async function applyChemicalReconcile() {
+  const pending = state.items.filter(i => i.type === 'chemical' && !i.presentConfirmed);
+  const unstaged = pending.filter(i => !state.chemRemovalStaging[i.id]);
+
+  if (unstaged.length) {
+    const ok = confirm(
+      `${unstaged.length} chemical${unstaged.length !== 1 ? 's' : ''} have no decision yet and will be left unchanged. Proceed?`
+    );
+    if (!ok) return;
+  }
+
+  for (const item of pending) {
+    const choice = state.chemRemovalStaging[item.id];
+    if (choice === 'remove') {
+      await deleteItemFromDB(item.id);
+      const idx = state.items.findIndex(i => i.id === item.id);
+      if (idx !== -1) state.items.splice(idx, 1);
+    } else if (choice === 'keep') {
+      item.presentConfirmed = true;
+      await updateItemInDB(item);
+    }
+    // no choice → left untouched
+  }
+
+  const total = state.items.filter(i => i.type === 'chemical').length;
+  state.chemRemovalStaging = {};
+  await persistSession();
+
+  const metaEl = document.getElementById('endChemMeta');
+  if (metaEl) metaEl.textContent = `${total} chemical${total !== 1 ? 's' : ''} on the sheet`;
+  showScreen('end-chemical', false);
 }
 
 // ===== READ LABEL =====
@@ -988,6 +1066,22 @@ function renderReviewQueue() {
   empty.classList.add('hidden');
 
   list.innerHTML = queue.map((item, i) => {
+    if (item.reason === 'quantity_mismatch') {
+      const name     = item.fields?.chemical_description || item.existingFields?.chemical_description || 'Unknown chemical';
+      const existQty = [item.existingFields?.unit, item.existingFields?.chemical_unit].filter(Boolean).join(' ') || '(none)';
+      const scanQty  = [item.fields?.unit,         item.fields?.chemical_unit        ].filter(Boolean).join(' ') || '(none)';
+      return `<li class="review-item">
+        <div class="review-item__header">
+          <span class="review-item__name">${esc(name)}</span>
+          <span class="type-badge type-badge--uncertain">qty mismatch</span>
+        </div>
+        <p class="review-item__meta">Sheet says ${esc(existQty)} — scan suggests ${esc(scanQty)}</p>
+        <div class="review-item__actions">
+          <button class="btn btn--primary" onclick="resolveReviewItem(${i},'update_qty')">Update to scanned</button>
+          <button class="btn btn--ghost"   onclick="resolveReviewItem(${i},'keep_qty')">Keep sheet value</button>
+        </div>
+      </li>`;
+    }
     const fields    = FIELDS[item.type] || [];
     const nameField = fields.find(f => f.required) || fields[0];
     const name      = item.fields?.[nameField?.key] || 'Unnamed item';
@@ -1008,13 +1102,30 @@ function renderReviewQueue() {
 async function resolveReviewItem(index, action) {
   const item = state.reviewQueue[index];
   if (!item) return;
-  if (action === 'add') {
-    const dbItem = { type: item.type, sessionId: state.sessionId, fields: item.fields, status: 'corrected' };
+
+  if (action === 'update_qty') {
+    const existing = state.items.find(i => i.id === item.existingId);
+    if (existing) {
+      existing.fields.unit          = item.fields.unit          ?? existing.fields.unit;
+      existing.fields.chemical_unit = item.fields.chemical_unit ?? existing.fields.chemical_unit;
+      existing.status = 'corrected';
+      await updateItemInDB(existing);
+    }
+  } else if (action === 'keep_qty') {
+    // no-op: sheet value stays
+  } else if (action === 'add') {
+    const dbItem = {
+      type: item.type, sessionId: state.sessionId,
+      fields: item.fields, status: 'corrected',
+      ...(item.type === 'chemical' ? { presentConfirmed: true } : {}),
+    };
     const id = await addItemToDB(dbItem);
     dbItem.id = id;
     state.items.push(dbItem);
     state.totalScans++;
   }
+  // 'drop' — do nothing to the DB
+
   state.reviewQueue.splice(index, 1);
   await persistSession();
   updateReviewBadges();
@@ -1453,7 +1564,7 @@ function bindEvents() {
   document.getElementById('chemScanBackBtn').addEventListener('click', goBack);
   document.getElementById('chemReadBtn').addEventListener('click', () => handleReadLabel('chemical'));
   document.getElementById('chemTypeBtn').addEventListener('click', () => showManualEntry('Enter chemical details manually.'));
-  document.getElementById('endChemBtn').addEventListener('click', finishSession);
+  document.getElementById('endChemBtn').addEventListener('click', () => showScreen('chemical-reconcile'));
 
   // Chemical new details
   document.getElementById('chemNewAddBtn').addEventListener('click', confirmChemicalNew);

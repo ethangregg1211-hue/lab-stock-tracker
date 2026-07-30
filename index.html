@@ -493,6 +493,42 @@
     </div>
   </div>
 
+  <!-- ======== CHEMICAL RECONCILE ======== -->
+  <div class="screen" id="screen-chemical-reconcile">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Reconcile chemicals</h1>
+    </header>
+    <div class="screen-body">
+      <p class="muted-text" style="margin-bottom:16px">These chemicals were on the sheet but not scanned this session. Decide what to do with each one before finishing.</p>
+      <p class="muted-text hidden" id="chemReconcileEmpty">Everything was scanned — nothing to reconcile.</p>
+      <ul class="review-list" id="chemReconcileList"></ul>
+      <div class="btn-stack" style="margin-top:16px">
+        <button class="btn btn--outline btn--full" onclick="stageAllChemReconcile('keep')">Mark all remaining as still present</button>
+        <button class="btn btn--outline btn--full" onclick="stageAllChemReconcile('remove')">Remove all remaining</button>
+      </div>
+    </div>
+    <div class="actions-sticky">
+      <button class="btn btn--primary btn--full" id="chemApplyBtn" onclick="applyChemicalReconcile()">Apply &amp; finish</button>
+    </div>
+  </div>
+
+  <!-- ======== END CHEMICAL ======== -->
+  <div class="screen" id="screen-end-chemical">
+    <header class="app-header">
+      <h1 class="app-title">LabScan</h1>
+    </header>
+    <div class="screen-body screen-body--center">
+      <div class="success-check"><i class="ti ti-check"></i></div>
+      <h2 class="success-heading">Reconciliation complete</h2>
+      <p class="success-meta" id="endChemMeta"></p>
+      <div class="btn-stack">
+        <button class="btn btn--primary btn--full" onclick="finishSession()">Finish session</button>
+        <button class="btn btn--ghost btn--full" onclick="showScreen('chemical-scan', false)">Keep scanning</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ======== SHEET VIEW ======== -->
   <div class="screen" id="screen-sheet-view">
     <header class="app-header">
