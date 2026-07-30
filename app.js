@@ -52,6 +52,16 @@ const CONFLICT_KEYS = {
   histology: ['study', 'sample_mouse_id'],
 };
 
+const TISSUE_PRESETS = [
+  'tumor','mammary gland','cancer','GU','MG','RMG','LMG',
+  'bone','bones','tibia','femur','leg','legs','muscle',
+  'uterus','kidney','spleen','liver','lung','intestine',
+  'lymph node','brain','skin','ovary',
+];
+
+// Field keys that hold tissue/site data per session type
+const TISSUE_FIELD_KEY = { tissue: 'tissue_site', histology: 'tissue' };
+
 // ===== STATE =====
 const state = {
   screen: 'home',
@@ -61,6 +71,7 @@ const state = {
   items: [],
   reviewQueue: [],
   currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
+  currentStudy: null,
   lastScans: [],
   pendingResult: null,
   pendingScan1: null,
@@ -103,6 +114,7 @@ function showScanScreen(pushHistory = true) {
 function _onEnter(id) {
   const inits = {
     'home':             initHome,
+    'study-setup':      initStudySetup,
     'box-setup':        initBoxSetup,
     'box-scan':         initBoxScan,
     'antibody-scan':    initAntibodyScan,
@@ -164,22 +176,30 @@ function startSession(type) {
     pendingResult: null,
     pendingScan1: null,
     pendingConflict: null,
+    currentStudy: null,
     currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
-  showScreen(type === 'box' ? 'box-setup' : SCAN_SCREENS[type]);
+  if (type === 'box') {
+    showScreen('box-setup');
+  } else if (type === 'tissue' || type === 'histology') {
+    showScreen('study-setup');
+  } else {
+    showScreen(SCAN_SCREENS[type]);
+  }
 }
 
 async function resumeSessionFromDB() {
   const session = await loadSession();
   if (!session) return;
   Object.assign(state, {
-    sessionType: session.sessionType,
-    sessionId:   session.sessionId,
-    totalScans:  session.totalScans  || 0,
-    items:       session.items       || [],
-    reviewQueue: session.reviewQueue || [],
-    lastScans:   session.lastScans   || [],
-    currentBox:  session.currentBox  || { number: '', label: '', size: null, posIndex: 0, positions: {} },
+    sessionType:  session.sessionType,
+    sessionId:    session.sessionId,
+    totalScans:   session.totalScans  || 0,
+    items:        session.items       || [],
+    reviewQueue:  session.reviewQueue || [],
+    lastScans:    session.lastScans   || [],
+    currentStudy: session.currentStudy || null,
+    currentBox:   session.currentBox  || { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
   document.getElementById('resumeCard').classList.add('hidden');
   showScreen(state.sessionType === 'box' ? 'box-scan' : SCAN_SCREENS[state.sessionType]);
@@ -193,16 +213,52 @@ async function discardSessionFromDB() {
 async function persistSession() {
   try {
     await saveSession({
-      sessionType: state.sessionType,
-      sessionId:   state.sessionId,
-      totalScans:  state.totalScans,
-      items:       state.items,
-      reviewQueue: state.reviewQueue,
-      lastScans:   state.lastScans,
-      currentBox:  state.currentBox,
+      sessionType:  state.sessionType,
+      sessionId:    state.sessionId,
+      totalScans:   state.totalScans,
+      items:        state.items,
+      reviewQueue:  state.reviewQueue,
+      lastScans:    state.lastScans,
+      currentStudy: state.currentStudy,
+      currentBox:   state.currentBox,
     });
   } catch (e) {
     console.warn('Session save failed', e);
+  }
+}
+
+// ===== STUDY SETUP =====
+function _getRecentStudies() {
+  try { return JSON.parse(localStorage.getItem('labscan_recent_studies') || '[]'); }
+  catch { return []; }
+}
+
+function _addRecentStudy(name) {
+  const list = _getRecentStudies().filter(s => s !== name);
+  list.unshift(name);
+  localStorage.setItem('labscan_recent_studies', JSON.stringify(list.slice(0, 10)));
+}
+
+function initStudySetup() {
+  const input = document.getElementById('studyNameInput');
+  input.value = '';
+  document.getElementById('startStudyScanBtn').disabled = true;
+
+  const recent = _getRecentStudies().slice(0, 5);
+  const section = document.getElementById('recentStudiesSection');
+  const chipsEl = document.getElementById('recentStudiesChips');
+
+  if (recent.length) {
+    section.classList.remove('hidden');
+    chipsEl.innerHTML = recent.map(s => `<button class="recent-chip" type="button">${esc(s)}</button>`).join('');
+    chipsEl.querySelectorAll('.recent-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        input.value = chip.textContent;
+        document.getElementById('startStudyScanBtn').disabled = false;
+      });
+    });
+  } else {
+    section.classList.add('hidden');
   }
 }
 
@@ -333,7 +389,7 @@ async function handleReadLabel(sessionType) {
       showLoading('Reading label...');
       try {
         const base64 = captureFrame();
-        const result = await readLabelWithClaude(base64, 'antibody');
+        const result = await readLabelWithClaude(base64, 'antibody', {});
         hideLoading();
         state.pendingScan1 = result;
         _renderAntibodyMidpoint(result);
@@ -347,7 +403,7 @@ async function handleReadLabel(sessionType) {
       showLoading('Reading other side...');
       try {
         const base64 = captureFrame();
-        const result2 = await readLabelWithClaude(base64, 'antibody');
+        const result2 = await readLabelWithClaude(base64, 'antibody', {});
         hideLoading();
         const merged = _mergeScanResults(state.pendingScan1, result2);
         state.pendingScan1   = null;
@@ -366,8 +422,22 @@ async function handleReadLabel(sessionType) {
   showLoading('Reading label...');
   try {
     const base64 = captureFrame();
-    const result = await readLabelWithClaude(base64, sessionType);
+    const result = await readLabelWithClaude(base64, sessionType, { studyName: state.currentStudy });
     hideLoading();
+
+    // Apply tissue/site fuzzy preset matching
+    const tissueKey = TISSUE_FIELD_KEY[sessionType];
+    if (tissueKey && result[tissueKey]?.value) {
+      const match = _matchTissuePreset(result[tissueKey].value);
+      if (match) result[tissueKey] = match;
+    }
+
+    // Lock the study field if a study name was set by the user
+    if (state.currentStudy) {
+      const studyKey = sessionType === 'histology' ? 'study' : 'study_id';
+      result[studyKey] = { value: state.currentStudy, confidence: 'locked' };
+    }
+
     state.pendingResult = result;
 
     const screenMap = { histology: 'histology-result', tissue: 'tissue-result' };
@@ -440,6 +510,50 @@ function _renderAntibodyMidpoint(result) {
   document.getElementById('abMidpointPreview').innerHTML = html;
 }
 
+// ===== TISSUE PRESET FUZZY MATCHING =====
+function _stringSimilarity(a, b) {
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return a === b ? 1 : 0;
+  const getBigrams = s => {
+    const map = new Map();
+    for (let i = 0; i < s.length - 1; i++) {
+      const bg = s.slice(i, i + 2);
+      map.set(bg, (map.get(bg) || 0) + 1);
+    }
+    return map;
+  };
+  const setA = getBigrams(a), setB = getBigrams(b);
+  let inter = 0;
+  setA.forEach((count, bg) => { if (setB.has(bg)) inter += Math.min(count, setB.get(bg)); });
+  return (2 * inter) / ((a.length - 1) + (b.length - 1));
+}
+
+function _matchTissuePreset(value) {
+  if (!value) return null;
+  const v = value.toLowerCase().trim();
+
+  // Exact match
+  const exact = TISSUE_PRESETS.find(p => p.toLowerCase() === v);
+  if (exact) return { value: exact, confidence: 'high' };
+
+  // Containment (either direction)
+  const contains = TISSUE_PRESETS.find(p => {
+    const pl = p.toLowerCase();
+    return v.includes(pl) || pl.includes(v);
+  });
+  if (contains) return { value: contains, confidence: 'medium' };
+
+  // Bigram similarity above 80%
+  let bestMatch = null, bestScore = 0;
+  TISSUE_PRESETS.forEach(p => {
+    const score = _stringSimilarity(v, p.toLowerCase());
+    if (score > bestScore) { bestScore = score; bestMatch = p; }
+  });
+  if (bestScore >= 0.8) return { value: bestMatch, confidence: 'medium' };
+
+  return null;
+}
+
 // ===== MANUAL ENTRY =====
 function showManualEntry(reason) {
   document.getElementById('manualReason').textContent = reason || 'Enter details manually.';
@@ -449,25 +563,46 @@ function showManualEntry(reason) {
 
 function _buildManualForm() {
   const fields = FIELDS[state.sessionType] || [];
-  document.getElementById('manualFormFields').innerHTML = fields.map(f => `
-    <label class="field-group">
-      <span class="field-label">${esc(f.label)}${f.required ? ' *' : ''}</span>
+  const studyKey = state.sessionType === 'histology' ? 'study' : 'study_id';
+  document.getElementById('manualFormFields').innerHTML = fields.map(f => {
+    const locked = state.currentStudy && f.key === studyKey;
+    return `<label class="field-group">
+      <span class="field-label">${esc(f.label)}${f.required ? ' *' : ''}${locked ? ' <i class="ti ti-lock" style="font-size:11px;color:var(--accent)"></i>' : ''}</span>
       <input type="${f.type || 'text'}" name="${f.key}" class="input"
-        placeholder="${f.required ? 'Required' : ''}">
-    </label>`).join('');
+        value="${locked ? esc(state.currentStudy) : ''}"
+        placeholder="${f.required ? 'Required' : ''}"
+        ${locked ? 'readonly style="opacity:0.6;pointer-events:none"' : ''}>
+    </label>`;
+  }).join('');
 }
 
 // ===== RESULT CARD =====
 function renderResultCard(fieldDefs, apiResult, container) {
-  const sure = [], uncertain = [], unreadable = [];
+  const locked = [], sure = [], uncertain = [], unreadable = [];
   fieldDefs.forEach(f => {
     const r = apiResult[f.key] || { value: null, confidence: 'low' };
-    if (r.confidence === 'high' && r.value)  sure.push({ ...f, value: r.value });
-    else if (r.confidence === 'medium')       uncertain.push({ ...f, value: r.value });
-    else                                      unreadable.push({ ...f });
+    if (r.confidence === 'locked')           locked.push({ ...f, value: r.value });
+    else if (r.confidence === 'high' && r.value) sure.push({ ...f, value: r.value });
+    else if (r.confidence === 'medium')      uncertain.push({ ...f, value: r.value });
+    else                                     unreadable.push({ ...f });
   });
 
   let html = '';
+
+  if (locked.length) {
+    html += `<div class="result-section result-section--locked">
+      <div class="result-section__header">
+        <span class="result-dot result-dot--green"></span>
+        <span class="result-section__title">Set by you <span class="result-count"><i class="ti ti-lock" style="font-size:11px"></i></span></span>
+      </div>
+      <div class="result-chips">
+        ${locked.map(f => `<span class="field-chip field-chip--locked">
+          <i class="ti ti-lock"></i><strong>${esc(f.label)}:</strong> ${esc(f.value)}
+          <input type="hidden" class="field-input" name="${f.key}" value="${esc(f.value)}">
+        </span>`).join('')}
+      </div>
+    </div>`;
+  }
 
   if (sure.length) {
     html += `<div class="result-section">
@@ -771,7 +906,7 @@ async function finishSession() {
   Object.assign(state, {
     sessionType: null, sessionId: null, totalScans: 0,
     items: [], reviewQueue: [], lastScans: [],
-    pendingScan1: null,
+    pendingScan1: null, currentStudy: null,
     currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
   showScreen('home', false);
@@ -902,6 +1037,18 @@ function bindEvents() {
   document.getElementById('startBoxBtn').addEventListener('click',       () => startSession('box'));
   document.getElementById('startTissueBtn').addEventListener('click',    () => startSession('tissue'));
   document.getElementById('startHistologyBtn').addEventListener('click', () => startSession('histology'));
+
+  // Study setup
+  document.getElementById('studyNameInput').addEventListener('input', e => {
+    document.getElementById('startStudyScanBtn').disabled = !e.target.value.trim();
+  });
+  document.getElementById('startStudyScanBtn').addEventListener('click', () => {
+    const name = document.getElementById('studyNameInput').value.trim();
+    if (!name) return;
+    state.currentStudy = name;
+    _addRecentStudy(name);
+    showScreen(SCAN_SCREENS[state.sessionType]);
+  });
 
   // Resume / discard
   document.getElementById('resumeBtn').addEventListener('click',  resumeSessionFromDB);

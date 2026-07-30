@@ -8,6 +8,9 @@ Rules:
 - Never append "?" to any value. Use the confidence field to communicate uncertainty, not punctuation.
 - If a field is uncertain, return the value you found as-is with confidence "medium" or "low".`;
 
+const TISSUE_PRESET_RULE = `
+- tissue/site field: Compare what you read on the label to this preset list and return the closest matching option: tumor, mammary gland, cancer, GU, MG, RMG, LMG, bone, bones, tibia, femur, leg, legs, muscle, uterus, kidney, spleen, liver, lung, intestine, lymph node, brain, skin, ovary. If the match is confident return it as high confidence. If the match is close but not certain return it as medium confidence. If what you read does not match anything on the list, return what you actually read from the label as low confidence so the user can review it. Never reject a tissue/site value just because it is not on the list.`;
+
 const PROMPTS = {
   antibody: `You are reading a lab reagent or antibody vial label. Extract these fields and return ONLY a valid JSON object, no other text:
 catalog_number, lot_number, target, host_species, clone, concentration, expiry, storage.
@@ -23,24 +26,30 @@ For every field return: { "value": "<string or null>", "confidence": "high" | "m
 
   histology: `You are reading a histology slide label. Extract these fields and return ONLY a valid JSON object, no other text:
 study, sample_mouse_id, tissue, stain, notes.
-For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }${SHARED_RULES}`,
+For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }${SHARED_RULES}${TISSUE_PRESET_RULE}`,
 
   tissue: `You are reading a wax tissue block or cassette label. Extract these fields and return ONLY a valid JSON object, no other text:
 study_id, sample_number, tissue_site, notes.
 For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }
 Field format constraints:
-- sample_number: must match the format # followed by 1 or 2 digits (examples: #1, #8, #23). If you cannot find a value matching this exact format on the label, return null with confidence "low". Do not guess.${SHARED_RULES}`,
+- sample_number: must match the format # followed by 1 or 2 digits (examples: #1, #8, #23). If you cannot find a value matching this exact format on the label, return null with confidence "low". Do not guess.${SHARED_RULES}${TISSUE_PRESET_RULE}`,
 };
 
 const _offlineQueue = [];
 
-async function readLabelWithClaude(base64Image, sessionType) {
+async function readLabelWithClaude(base64Image, sessionType, options = {}) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error('No API key configured - open Settings to add it.');
 
   if (!navigator.onLine) {
     _offlineQueue.push({ base64Image, sessionType, ts: Date.now() });
     throw new Error('You are offline. The scan has been queued and will retry when reconnected.');
+  }
+
+  let prompt = PROMPTS[sessionType] || PROMPTS.box;
+  if (options.studyName) {
+    const studyKey = sessionType === 'histology' ? 'study' : 'study_id';
+    prompt += `\nSESSION CONTEXT: The study name for this session is "${options.studyName}". Return this exact value for the ${studyKey} field with confidence "high". Do not try to read the study name from the label.`;
   }
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -58,7 +67,7 @@ async function readLabelWithClaude(base64Image, sessionType) {
         role: 'user',
         content: [
           { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64Image } },
-          { type: 'text', text: PROMPTS[sessionType] || PROMPTS.box },
+          { type: 'text', text: prompt },
         ],
       }],
     }),

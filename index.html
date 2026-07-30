@@ -252,6 +252,27 @@
     </nav>
   </div>
 
+  <!-- ======== STUDY SETUP ======== -->
+  <div class="screen" id="screen-study-setup">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Study name</h1>
+    </header>
+    <div class="screen-body">
+      <label class="field-group">
+        <span class="field-label">Which study are you scanning today?</span>
+        <input type="text" id="studyNameInput" class="input" placeholder="e.g. Study 42" autocomplete="off">
+      </label>
+      <div id="recentStudiesSection" class="recent-studies hidden">
+        <p class="field-label" style="margin-bottom:8px">Recent studies</p>
+        <div id="recentStudiesChips" class="recent-chips"></div>
+      </div>
+    </div>
+    <div class="actions-sticky">
+      <button class="btn btn--primary btn--full" id="startStudyScanBtn" disabled>Start scanning</button>
+    </div>
+  </div>
+
   <!-- ======== ANTIBODY CONFLICT ======== -->
   <div class="screen" id="screen-antibody-conflict">
     <header class="app-header">
