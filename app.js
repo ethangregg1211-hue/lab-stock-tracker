@@ -30,6 +30,21 @@ const FIELDS = {
     { key: 'stain',          label: 'Stain' },
     { key: 'notes',          label: 'Notes' },
   ],
+  chemical: [
+    { key: 'chemical_description', label: 'Chemical Name',        required: true },
+    { key: 'cas_num',              label: 'CAS #' },
+    { key: 'catalog_number',       label: 'Catalog #' },
+    { key: 'vendor',               label: 'Vendor' },
+    { key: 'physical_state',       label: 'Physical State' },
+    { key: 'lot_number',           label: 'Lot #' },
+    { key: 'concentration',        label: 'Concentration' },
+    { key: 'receipt_quantity',     label: '# of Containers' },
+    { key: 'unit',                 label: 'Amount per Container' },
+    { key: 'chemical_unit',        label: 'Unit of Measure' },
+    { key: 'receipt_date',         label: 'Receipt Date',         type: 'date' },
+    { key: 'storage_location',     label: 'Storage Location' },
+    { key: 'storage_device',       label: 'Storage Device' },
+  ],
 };
 
 const SESSION_LABELS = {
@@ -37,6 +52,7 @@ const SESSION_LABELS = {
   box:       'Box inventory',
   tissue:    'Tissue blocks',
   histology: 'Histology slides',
+  chemical:  'Chemical inventory',
 };
 
 const SCAN_SCREENS = {
@@ -44,6 +60,7 @@ const SCAN_SCREENS = {
   box:       'box-scan',
   tissue:    'tissue-scan',
   histology: 'histology-scan',
+  chemical:  'chemical-scan',
 };
 
 const CONFLICT_KEYS = {
@@ -51,6 +68,17 @@ const CONFLICT_KEYS = {
   tissue:    ['study_id', 'sample_number'],
   histology: ['study', 'sample_mouse_id'],
 };
+
+// Fields shown on the scan result card (excludes non-label fields like qty/date/storage)
+const SCAN_FIELD_OVERRIDES = {
+  chemical: ['chemical_description','cas_num','catalog_number','vendor','physical_state','lot_number','concentration'],
+};
+
+function scanFieldsFor(type) {
+  const override = SCAN_FIELD_OVERRIDES[type];
+  if (!override) return FIELDS[type] || [];
+  return (FIELDS[type] || []).filter(f => override.includes(f.key));
+}
 
 const TISSUE_PRESETS = [
   'tumor','mammary gland','cancer','GU','MG','RMG','LMG',
@@ -72,6 +100,8 @@ const state = {
   reviewQueue: [],
   currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   currentStudy: null,
+  chemSetup: { storageLocation: '', storageDevice: '' },
+  chemRemovalStaging: {},
   lastScans: [],
   pendingResult: null,
   pendingScan1: null,
@@ -87,8 +117,8 @@ const navStack = [];
 function showScreen(id, pushHistory = true) {
   if (id === state.screen) return;
 
-  const leavingScan = ['box-scan','antibody-scan','tissue-scan','histology-scan'].includes(state.screen);
-  const enteringScan = ['box-scan','antibody-scan','tissue-scan','histology-scan'].includes(id);
+  const leavingScan = ['box-scan','antibody-scan','tissue-scan','histology-scan','chemical-scan'].includes(state.screen);
+  const enteringScan = ['box-scan','antibody-scan','tissue-scan','histology-scan','chemical-scan'].includes(id);
   if (leavingScan && !enteringScan) stopCamera();
 
   if (pushHistory) navStack.push(state.screen);
@@ -113,16 +143,19 @@ function showScanScreen(pushHistory = true) {
 
 function _onEnter(id) {
   const inits = {
-    'home':             initHome,
-    'study-setup':      initStudySetup,
-    'box-setup':        initBoxSetup,
-    'box-scan':         initBoxScan,
-    'antibody-scan':    initAntibodyScan,
-    'tissue-scan':      initTissueScan,
-    'histology-scan':   initHistologyScan,
-    'review-queue':     renderReviewQueue,
-    'sheet-view':       renderSheetView,
-    'end-box':          renderEndBox,
+    'home':                  initHome,
+    'study-setup':           initStudySetup,
+    'chemical-setup':        initChemicalSetup,
+    'box-setup':             initBoxSetup,
+    'box-scan':              initBoxScan,
+    'antibody-scan':         initAntibodyScan,
+    'tissue-scan':           initTissueScan,
+    'histology-scan':        initHistologyScan,
+    'chemical-scan':         initChemicalScan,
+    'chemical-new-details':  initChemicalNewDetails,
+    'review-queue':          renderReviewQueue,
+    'sheet-view':            renderSheetView,
+    'end-box':               renderEndBox,
   };
   if (inits[id]) inits[id]();
 }
@@ -158,7 +191,7 @@ function updateHomeUploadCard() {
     if (loadedEl)   loadedEl.classList.add('hidden');
   }
 
-  ['startAntibodyBtn', 'startBoxBtn', 'startTissueBtn', 'startHistologyBtn'].forEach(id => {
+  ['startAntibodyBtn', 'startBoxBtn', 'startTissueBtn', 'startHistologyBtn', 'startChemicalBtn'].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = !hasFile;
   });
@@ -177,12 +210,16 @@ function startSession(type) {
     pendingScan1: null,
     pendingConflict: null,
     currentStudy: null,
+    chemSetup: { storageLocation: '', storageDevice: '' },
+    chemRemovalStaging: {},
     currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
   if (type === 'box') {
     showScreen('box-setup');
   } else if (type === 'tissue' || type === 'histology') {
     showScreen('study-setup');
+  } else if (type === 'chemical') {
+    showScreen('chemical-setup');
   } else {
     showScreen(SCAN_SCREENS[type]);
   }
@@ -198,8 +235,10 @@ async function resumeSessionFromDB() {
     items:        session.items       || [],
     reviewQueue:  session.reviewQueue || [],
     lastScans:    session.lastScans   || [],
-    currentStudy: session.currentStudy || null,
-    currentBox:   session.currentBox  || { number: '', label: '', size: null, posIndex: 0, positions: {} },
+    currentStudy:       session.currentStudy       || null,
+    chemSetup:          session.chemSetup          || { storageLocation: '', storageDevice: '' },
+    chemRemovalStaging: session.chemRemovalStaging || {},
+    currentBox:         session.currentBox         || { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
   document.getElementById('resumeCard').classList.add('hidden');
   showScreen(state.sessionType === 'box' ? 'box-scan' : SCAN_SCREENS[state.sessionType]);
@@ -219,8 +258,10 @@ async function persistSession() {
       items:        state.items,
       reviewQueue:  state.reviewQueue,
       lastScans:    state.lastScans,
-      currentStudy: state.currentStudy,
-      currentBox:   state.currentBox,
+      currentStudy:       state.currentStudy,
+      chemSetup:          state.chemSetup,
+      chemRemovalStaging: state.chemRemovalStaging,
+      currentBox:         state.currentBox,
     });
   } catch (e) {
     console.warn('Session save failed', e);
@@ -341,7 +382,7 @@ function _updateBoxStatus() {
 function _checkScanCap() {
   const banner  = document.getElementById('scanCapBanner');
   const over500 = state.totalScans >= 500;
-  ['boxReadBtn','abReadBtn','tissueReadBtn','histReadBtn'].forEach(id => {
+  ['boxReadBtn','abReadBtn','tissueReadBtn','histReadBtn','chemReadBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = over500;
   });
@@ -373,6 +414,158 @@ async function initHistologyScan() {
   renderUndoStrip();
   renderLastScanned();
   await startCamera('histCameraSlot');
+}
+
+// ===== CHEMICAL SETUP =====
+function initChemicalSetup() {
+  document.getElementById('chemStorageLocationInput').value = '';
+  document.getElementById('chemStorageDeviceInput').value   = '';
+  document.getElementById('startChemScanBtn').disabled = true;
+}
+
+function _validateChemSetup() {
+  const loc = document.getElementById('chemStorageLocationInput').value.trim();
+  const dev = document.getElementById('chemStorageDeviceInput').value.trim();
+  document.getElementById('startChemScanBtn').disabled = !(loc && dev);
+}
+
+// ===== CHEMICAL SCAN =====
+async function initChemicalScan() {
+  _updateChemStatus();
+  _checkScanCap();
+  renderUndoStrip();
+  renderLastScanned();
+  await startCamera('chemCameraSlot');
+}
+
+function _updateChemStatus() {
+  const chemItems = state.items.filter(i => i.type === 'chemical');
+  const confirmed = chemItems.filter(i => i.presentConfirmed).length;
+  const totalEl   = document.getElementById('chemTotal');
+  const confEl    = document.getElementById('chemConfirmedCount');
+  if (totalEl) totalEl.textContent = `${state.totalScans} scans`;
+  if (confEl)  confEl.textContent  = `${confirmed}/${chemItems.length} confirmed present`;
+}
+
+// ===== CHEMICAL MATCHING =====
+function _norm(v) { return String(v ?? '').trim().toLowerCase(); }
+
+function _findChemicalMatch(values) {
+  const name    = _norm(values.chemical_description);
+  const cas     = _norm(values.cas_num);
+  const catalog = _norm(values.catalog_number);
+  if (!name) return null;
+
+  const candidates = state.items.filter(i => i.type === 'chemical' && _norm(i.fields.chemical_description) === name);
+  if (!candidates.length) return null;
+
+  // (a) name + CAS + catalog
+  if (cas && catalog) {
+    const hit = candidates.find(i => _norm(i.fields.cas_num) === cas && _norm(i.fields.catalog_number) === catalog);
+    if (hit) return hit;
+  }
+  // (b) name + catalog
+  if (catalog) {
+    const hit = candidates.find(i => _norm(i.fields.catalog_number) === catalog);
+    if (hit) return hit;
+  }
+  // (c) name + CAS
+  if (cas) {
+    const hit = candidates.find(i => _norm(i.fields.cas_num) === cas);
+    if (hit) return hit;
+  }
+  // (d) name only — return first candidate as fallback
+  return candidates[0];
+}
+
+async function confirmChemicalScan(values) {
+  const match = _findChemicalMatch(values);
+
+  if (match) {
+    // Mark as confirmed present
+    match.presentConfirmed = true;
+    if (match.status === 'imported') match.status = 'confirmed';
+    await updateItemInDB(match);
+    const idx = state.items.findIndex(i => i.id === match.id);
+    if (idx !== -1) state.items[idx] = match;
+
+    // Check for quantity/unit mismatch
+    const unitMismatch  = values.unit          && match.fields.unit          && _norm(values.unit)          !== _norm(match.fields.unit);
+    const chUnitMismatch = values.chemical_unit && match.fields.chemical_unit && _norm(values.chemical_unit) !== _norm(match.fields.chemical_unit);
+    if (unitMismatch || chUnitMismatch) {
+      state.reviewQueue.push({
+        type: 'chemical',
+        reason: 'quantity_mismatch',
+        fields: values,
+        existingId: match.id,
+        existingFields: { ...match.fields },
+        addedAt: Date.now(),
+      });
+      updateReviewBadges();
+    }
+
+    state.totalScans++;
+    _pushUndo({ id: match.id, displayName: match.fields.chemical_description || 'Unknown', chemMatched: true });
+    await persistSession();
+    showScanScreen(false);
+  } else {
+    // Not found — collect extra details before adding
+    state.pendingResult = values;
+    _buildChemicalNewForm(values);
+    showScreen('chemical-new-details');
+  }
+}
+
+// ===== CHEMICAL NEW DETAILS =====
+function _buildChemicalNewForm(scanValues) {
+  document.getElementById('chemNewSummary').innerHTML = [
+    { label: 'Chemical Name', key: 'chemical_description' },
+    { label: 'CAS #',         key: 'cas_num' },
+    { label: 'Catalog #',     key: 'catalog_number' },
+    { label: 'Vendor',        key: 'vendor' },
+  ].filter(f => scanValues[f.key])
+   .map(f => `<div class="conflict-row"><strong>${esc(f.label)}</strong>${esc(scanValues[f.key])}</div>`)
+   .join('') || '<p class="muted-text">No fields read from label.</p>';
+
+  document.getElementById('chemNewContainers').value  = '';
+  document.getElementById('chemNewAmount').value      = '';
+  document.getElementById('chemNewUnit').value        = '';
+  document.getElementById('chemNewReceiptDate').value = '';
+  document.getElementById('chemNewLocation').value    = state.chemSetup.storageLocation;
+  document.getElementById('chemNewDevice').value      = state.chemSetup.storageDevice;
+}
+
+function initChemicalNewDetails() {
+  // Re-populate in case state changed (navigation back/forward)
+  if (state.pendingResult) _buildChemicalNewForm(state.pendingResult);
+}
+
+async function confirmChemicalNew() {
+  const scanned = state.pendingResult || {};
+  const fields = {
+    ...scanned,
+    receipt_quantity: document.getElementById('chemNewContainers').value.trim(),
+    unit:             document.getElementById('chemNewAmount').value.trim(),
+    chemical_unit:    document.getElementById('chemNewUnit').value.trim(),
+    receipt_date:     document.getElementById('chemNewReceiptDate').value,
+    storage_location: document.getElementById('chemNewLocation').value.trim(),
+    storage_device:   document.getElementById('chemNewDevice').value.trim(),
+  };
+
+  if (!fields.chemical_description) {
+    alert('Chemical Name is required.');
+    return;
+  }
+
+  const item = { type: 'chemical', sessionId: state.sessionId, fields, status: 'auto', presentConfirmed: true };
+  const id   = await addItemToDB(item);
+  item.id    = id;
+  state.items.push(item);
+  state.totalScans++;
+  state.pendingResult = null;
+  _pushUndo({ id, displayName: fields.chemical_description || 'Unknown', chemMatched: false });
+  await persistSession();
+  showScreen('chemical-scan', false);
 }
 
 // ===== READ LABEL =====
@@ -445,7 +638,7 @@ async function handleReadLabel(sessionType) {
     const screenId  = screenMap[sessionType] || 'box-result';
     const cardId    = cardMap[sessionType]   || 'boxResultCard';
     showScreen(screenId);
-    renderResultCard(FIELDS[sessionType], result, document.getElementById(cardId));
+    renderResultCard(scanFieldsFor(sessionType), result, document.getElementById(cardId));
   } catch (err) {
     hideLoading();
     showManualEntry(err.message);
@@ -562,7 +755,7 @@ function showManualEntry(reason) {
 }
 
 function _buildManualForm() {
-  const fields = FIELDS[state.sessionType] || [];
+  const fields = scanFieldsFor(state.sessionType);
   const studyKey = state.sessionType === 'histology' ? 'study' : 'study_id';
   document.getElementById('manualFormFields').innerHTML = fields.map(f => {
     const locked = state.currentStudy && f.key === studyKey;
@@ -780,7 +973,7 @@ function addToReviewQueue(values, reason) {
 function updateReviewBadges() {
   const count = state.reviewQueue.length;
   const text  = count > 0 ? String(count) : '0';
-  ['reviewBadge1','reviewBadge2','reviewBadge3','reviewBadge4','reviewBadge5','reviewBadge6','reviewQueueBadge'].forEach(id => {
+  ['reviewBadge1','reviewBadge2','reviewBadge3','reviewBadge4','reviewBadge5','reviewBadge6','reviewBadge7','reviewQueueBadge'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.textContent = text; el.dataset.count = text; }
   });
@@ -836,6 +1029,8 @@ function _pushUndo(scan) {
   renderLastScanned();
   if (state.sessionType === 'box') {
     _updateBoxStatus();
+  } else if (state.sessionType === 'chemical') {
+    _updateChemStatus();
   } else {
     const idMap = { antibody: 'abTotal', tissue: 'tissueTotal', histology: 'histTotal' };
     const el = document.getElementById(idMap[state.sessionType]);
@@ -845,7 +1040,7 @@ function _pushUndo(scan) {
 }
 
 function renderUndoStrip() {
-  const ids  = { antibody: 'abUndoStrip', box: 'boxUndoStrip', tissue: 'tissueUndoStrip', histology: 'histUndoStrip' };
+  const ids  = { antibody: 'abUndoStrip', box: 'boxUndoStrip', tissue: 'tissueUndoStrip', histology: 'histUndoStrip', chemical: 'chemUndoStrip' };
   const strip = document.getElementById(ids[state.sessionType]);
   if (!strip) return;
   strip.innerHTML = state.lastScans.map(s =>
@@ -857,26 +1052,38 @@ function renderUndoStrip() {
 
 async function undoScan(itemId) {
   if (!confirm('Remove this scan?')) return;
-  const idx = state.items.findIndex(i => i.id === itemId);
+  const lastScan = state.lastScans.find(s => s.id === itemId);
+  const idx      = state.items.findIndex(i => i.id === itemId);
+
   if (idx !== -1) {
     const item = state.items[idx];
-    if (item.position) {
-      delete state.currentBox.positions[item.position];
-      if (state.currentBox.posIndex > 0) state.currentBox.posIndex--;
+
+    if (lastScan?.chemMatched && item.type === 'chemical') {
+      // Sheet row — un-confirm rather than delete
+      item.presentConfirmed = false;
+      if (item.status === 'confirmed') item.status = 'imported';
+      await updateItemInDB(item);
+    } else {
+      if (item.position) {
+        delete state.currentBox.positions[item.position];
+        if (state.currentBox.posIndex > 0) state.currentBox.posIndex--;
+      }
+      state.items.splice(idx, 1);
+      await deleteItemFromDB(itemId);
     }
-    state.items.splice(idx, 1);
-    await deleteItemFromDB(itemId);
     if (state.totalScans > 0) state.totalScans--;
   }
+
   state.lastScans = state.lastScans.filter(s => s.id !== itemId);
   await persistSession();
   renderUndoStrip();
   renderLastScanned();
-  if (state.sessionType === 'box') _updateBoxStatus();
+  if (state.sessionType === 'box')      _updateBoxStatus();
+  if (state.sessionType === 'chemical') _updateChemStatus();
 }
 
 function renderLastScanned() {
-  const ids  = { antibody: 'abLastScannedList', box: 'boxLastScannedList', tissue: 'tissueLastScannedList', histology: 'histLastScannedList' };
+  const ids  = { antibody: 'abLastScannedList', box: 'boxLastScannedList', tissue: 'tissueLastScannedList', histology: 'histLastScannedList', chemical: 'chemLastScannedList' };
   const list = document.getElementById(ids[state.sessionType]);
   if (!list) return;
   const showPos = state.sessionType === 'box';
@@ -907,6 +1114,8 @@ async function finishSession() {
     sessionType: null, sessionId: null, totalScans: 0,
     items: [], reviewQueue: [], lastScans: [],
     pendingScan1: null, currentStudy: null,
+    chemSetup: { storageLocation: '', storageDevice: '' },
+    chemRemovalStaging: {},
     currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
   showScreen('home', false);
@@ -1120,8 +1329,9 @@ function bindEvents() {
   document.getElementById('boxResultBackBtn').addEventListener('click', goBack);
   document.getElementById('boxConfirmBtn').addEventListener('click', async () => {
     const values = collectResultValues(document.getElementById('boxResultCard'));
-    if (state.sessionType === 'box')           await confirmBoxScan(values);
-    else if (state.sessionType === 'antibody') await confirmAntibodyScan(values);
+    if (state.sessionType === 'box')            await confirmBoxScan(values);
+    else if (state.sessionType === 'antibody')  await confirmAntibodyScan(values);
+    else if (state.sessionType === 'chemical')  await confirmChemicalScan(values);
   });
   document.getElementById('boxReviewLaterBtn').addEventListener('click', () => {
     const card   = document.getElementById('boxResultCard');
@@ -1229,16 +1439,36 @@ function bindEvents() {
     showScreen('histology-scan', false);
   });
 
+  // Chemical setup
+  document.getElementById('startChemicalBtn').addEventListener('click', () => startSession('chemical'));
+  document.getElementById('chemStorageLocationInput').addEventListener('input', _validateChemSetup);
+  document.getElementById('chemStorageDeviceInput').addEventListener('input',   _validateChemSetup);
+  document.getElementById('startChemScanBtn').addEventListener('click', () => {
+    state.chemSetup.storageLocation = document.getElementById('chemStorageLocationInput').value.trim();
+    state.chemSetup.storageDevice   = document.getElementById('chemStorageDeviceInput').value.trim();
+    showScreen('chemical-scan');
+  });
+
+  // Chemical scan
+  document.getElementById('chemScanBackBtn').addEventListener('click', goBack);
+  document.getElementById('chemReadBtn').addEventListener('click', () => handleReadLabel('chemical'));
+  document.getElementById('chemTypeBtn').addEventListener('click', () => showManualEntry('Enter chemical details manually.'));
+  document.getElementById('endChemBtn').addEventListener('click', finishSession);
+
+  // Chemical new details
+  document.getElementById('chemNewAddBtn').addEventListener('click', confirmChemicalNew);
+
   // Manual entry
   document.getElementById('manualSubmitBtn').addEventListener('click', async () => {
     const values = {};
     document.getElementById('manualFormFields').querySelectorAll('input').forEach(i => { values[i.name] = i.value.trim(); });
-    const req = (FIELDS[state.sessionType] || []).find(f => f.required);
+    const req = scanFieldsFor(state.sessionType).find(f => f.required);
     if (req && !values[req.key]) { alert(`${req.label} is required.`); return; }
     if (state.sessionType === 'box')            await confirmBoxScan(values);
     else if (state.sessionType === 'antibody')  await confirmAntibodyScan(values);
     else if (state.sessionType === 'tissue')    await confirmTissueScan(values);
     else if (state.sessionType === 'histology') await confirmHistologyScan(values);
+    else if (state.sessionType === 'chemical')  await confirmChemicalScan(values);
   });
 
   // Review queue

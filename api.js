@@ -33,6 +33,14 @@ study_id, sample_number, tissue_site, notes.
 For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }
 Field format constraints:
 - sample_number: must match the format # followed by 1 or 2 digits (examples: #1, #8, #23). If you cannot find a value matching this exact format on the label, return null with confidence "low". Do not guess.${SHARED_RULES}${TISSUE_PRESET_RULE}`,
+
+  chemical: `You are reading a chemical container label (bottle, drum, jug, or similar). Extract these fields and return ONLY a valid JSON object, no other text:
+chemical_description, cas_num, catalog_number, vendor, physical_state, lot_number, concentration.
+For every field return an object: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }
+- "high"   = clearly legible text
+- "medium" = partially readable, faded, or inferred from context
+- "low"    = not found or completely unreadable
+Example: { "chemical_description": { "value": "Ethanol", "confidence": "high" }, "cas_num": { "value": "64-17-5", "confidence": "high" }, ... }${SHARED_RULES}`,
 };
 
 const _offlineQueue = [];
