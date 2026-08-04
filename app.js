@@ -10,13 +10,6 @@ const FIELDS = {
     { key: 'expiry',         label: 'Expiry date',       type: 'date' },
     { key: 'storage',        label: 'Storage condition' },
   ],
-  box: [
-    { key: 'sample_name',   label: 'Sample name',        required: true },
-    { key: 'date',          label: 'Date',               type: 'date' },
-    { key: 'researcher',    label: 'Researcher initials' },
-    { key: 'volume',        label: 'Volume / Amount' },
-    { key: 'description',   label: 'Description' },
-  ],
   tissue: [
     { key: 'study_id',      label: 'Study ID',           required: true },
     { key: 'sample_number', label: 'Sample number' },
@@ -49,7 +42,6 @@ const FIELDS = {
 
 const SESSION_LABELS = {
   antibody:  'Antibody stocks',
-  box:       'Box inventory',
   tissue:    'Tissue blocks',
   histology: 'Histology slides',
   chemical:  'Chemical inventory',
@@ -57,7 +49,6 @@ const SESSION_LABELS = {
 
 const SCAN_SCREENS = {
   antibody:  'antibody-scan',
-  box:       'box-scan',
   tissue:    'tissue-scan',
   histology: 'histology-scan',
   chemical:  'chemical-scan',
@@ -98,7 +89,6 @@ const state = {
   totalScans: 0,
   items: [],
   reviewQueue: [],
-  currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   currentStudy: null,
   chemSetup: { storageLocation: '', storageDevice: '' },
   chemRemovalStaging: {},
@@ -117,8 +107,8 @@ const navStack = [];
 function showScreen(id, pushHistory = true) {
   if (id === state.screen) return;
 
-  const leavingScan = ['box-scan','antibody-scan','tissue-scan','histology-scan','chemical-scan'].includes(state.screen);
-  const enteringScan = ['box-scan','antibody-scan','tissue-scan','histology-scan','chemical-scan'].includes(id);
+  const leavingScan = ['antibody-scan','tissue-scan','histology-scan','chemical-scan'].includes(state.screen);
+  const enteringScan = ['antibody-scan','tissue-scan','histology-scan','chemical-scan'].includes(id);
   if (leavingScan && !enteringScan) stopCamera();
 
   if (pushHistory) navStack.push(state.screen);
@@ -146,8 +136,6 @@ function _onEnter(id) {
     'home':                  initHome,
     'study-setup':           initStudySetup,
     'chemical-setup':        initChemicalSetup,
-    'box-setup':             initBoxSetup,
-    'box-scan':              initBoxScan,
     'antibody-scan':         initAntibodyScan,
     'tissue-scan':           initTissueScan,
     'histology-scan':        initHistologyScan,
@@ -156,7 +144,6 @@ function _onEnter(id) {
     'chemical-reconcile':    renderChemicalReconcile,
     'review-queue':          renderReviewQueue,
     'sheet-view':            renderSheetView,
-    'end-box':               renderEndBox,
   };
   if (inits[id]) inits[id]();
 }
@@ -192,7 +179,7 @@ function updateHomeUploadCard() {
     if (loadedEl)   loadedEl.classList.add('hidden');
   }
 
-  ['startAntibodyBtn', 'startBoxBtn', 'startTissueBtn', 'startHistologyBtn', 'startChemicalBtn'].forEach(id => {
+  ['startAntibodyBtn', 'startTissueBtn', 'startHistologyBtn', 'startChemicalBtn'].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = !hasFile;
   });
@@ -213,11 +200,8 @@ function startSession(type) {
     currentStudy: null,
     chemSetup: { storageLocation: '', storageDevice: '' },
     chemRemovalStaging: {},
-    currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
-  if (type === 'box') {
-    showScreen('box-setup');
-  } else if (type === 'tissue' || type === 'histology') {
+  if (type === 'tissue' || type === 'histology') {
     showScreen('study-setup');
   } else if (type === 'chemical') {
     showScreen('chemical-setup');
@@ -239,10 +223,9 @@ async function resumeSessionFromDB() {
     currentStudy:       session.currentStudy       || null,
     chemSetup:          session.chemSetup          || { storageLocation: '', storageDevice: '' },
     chemRemovalStaging: session.chemRemovalStaging || {},
-    currentBox:         session.currentBox         || { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
   document.getElementById('resumeCard').classList.add('hidden');
-  showScreen(state.sessionType === 'box' ? 'box-scan' : SCAN_SCREENS[state.sessionType]);
+  showScreen(SCAN_SCREENS[state.sessionType]);
 }
 
 async function discardSessionFromDB() {
@@ -262,7 +245,6 @@ async function persistSession() {
       currentStudy:       state.currentStudy,
       chemSetup:          state.chemSetup,
       chemRemovalStaging: state.chemRemovalStaging,
-      currentBox:         state.currentBox,
     });
   } catch (e) {
     console.warn('Session save failed', e);
@@ -304,90 +286,12 @@ function initStudySetup() {
   }
 }
 
-// ===== BOX SETUP =====
-function initBoxSetup() {
-  document.getElementById('boxNumber').value = '';
-  document.getElementById('boxLabel').value  = '';
-  document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('size-btn--active'));
-  document.getElementById('gridHint').classList.add('hidden');
-  document.getElementById('boxGrid').innerHTML = '';
-  document.getElementById('startBoxScanBtn').disabled = true;
-  state.currentBox = { number: '', label: '', size: null, posIndex: 0, positions: {} };
-}
-
-function validateBoxSetup() {
-  const ok = document.getElementById('boxNumber').value.trim() && state.currentBox.size;
-  document.getElementById('startBoxScanBtn').disabled = !ok;
-}
-
-function renderBoxGrid() {
-  const { size, positions, posIndex } = state.currentBox;
-  const grid = document.getElementById('boxGrid');
-  if (!size) { grid.innerHTML = ''; return; }
-  const [rows, cols] = size.split('x').map(Number);
-  grid.style.gridTemplateColumns = `repeat(${cols + 1}, 28px)`;
-  grid.innerHTML = '';
-
-  _gridCell(grid, '', 'grid-cell--label', 'font-size:9px');
-  for (let c = 1; c <= cols; c++) _gridCell(grid, c, 'grid-cell--label', 'font-size:9px;color:var(--text-muted);display:flex;align-items:center;justify-content:center');
-
-  for (let r = 0; r < rows; r++) {
-    _gridCell(grid, String.fromCharCode(65 + r), 'grid-cell--label', 'font-size:9px;color:var(--text-muted);display:flex;align-items:center;justify-content:center');
-    for (let c = 0; c < cols; c++) {
-      const idx = r * cols + c;
-      const key = `${String.fromCharCode(65 + r)}${c + 1}`;
-      const cls = positions[key] ? 'grid-cell--filled' : idx === posIndex ? 'grid-cell--next' : '';
-      _gridCell(grid, '', cls);
-    }
-  }
-}
-
-function _gridCell(parent, text, cls, style) {
-  const d = document.createElement('div');
-  d.className = 'grid-cell ' + (cls || '');
-  if (style) d.style.cssText = style;
-  if (text !== '') d.textContent = text;
-  parent.appendChild(d);
-}
-
-function posKeyFromIndex(index, size) {
-  if (!size) return '';
-  const [, cols] = size.split('x').map(Number);
-  return `${String.fromCharCode(65 + Math.floor(index / cols))}${(index % cols) + 1}`;
-}
-
-function boxCapacity(size) {
-  if (!size) return 0;
-  const [r, c] = size.split('x').map(Number);
-  return r * c;
-}
-
-// ===== BOX SCAN =====
-async function initBoxScan() {
-  _updateBoxStatus();
-  _checkScanCap();
-  renderUndoStrip();
-  renderLastScanned();
-  const ok = await startCamera('boxCameraSlot');
-  if (!ok) document.getElementById('boxReadBtn').disabled = true;
-}
-
-function _updateBoxStatus() {
-  const { number, size, posIndex, positions } = state.currentBox;
-  const cap = boxCapacity(size);
-  document.getElementById('bsBox').textContent   = number ? `Box ${number}` : 'Box -';
-  document.getElementById('bsPos').textContent   = size ? `${posKeyFromIndex(posIndex, size)} (${Object.keys(positions).length}/${cap})` : '-';
-  document.getElementById('bsTotal').textContent = `${state.totalScans} scan${state.totalScans !== 1 ? 's' : ''}`;
-}
-
 function _checkScanCap() {
-  const banner  = document.getElementById('scanCapBanner');
   const over500 = state.totalScans >= 500;
-  ['boxReadBtn','abReadBtn','tissueReadBtn','histReadBtn','chemReadBtn'].forEach(id => {
+  ['abReadBtn','tissueReadBtn','histReadBtn','chemReadBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = over500;
   });
-  if (banner) banner.classList.toggle('hidden', state.totalScans < 450);
 }
 
 // ===== ANTIBODY SCAN =====
@@ -647,6 +551,15 @@ async function applyChemicalReconcile() {
 }
 
 // ===== READ LABEL =====
+function _extractFieldValues(apiResult, sessionType) {
+  const fields = {};
+  (FIELDS[sessionType] || []).forEach(f => {
+    const r = apiResult[f.key];
+    fields[f.key] = (r && typeof r === 'object') ? (r.value || '') : (r || '');
+  });
+  return fields;
+}
+
 async function handleReadLabel(sessionType) {
   if (!isCameraActive()) {
     showManualEntry('Camera unavailable - enter details manually.');
@@ -703,9 +616,28 @@ async function handleReadLabel(sessionType) {
       if (match) result[tissueKey] = match;
     }
 
-    // Lock the study field if a study name was set by the user
+    // Study field handling for tissue/histology sessions
     if (state.currentStudy) {
       const studyKey = sessionType === 'histology' ? 'study' : 'study_id';
+      if ((sessionType === 'histology' || sessionType === 'tissue') && result.study_mismatch === true && result.study_id_found) {
+        const fields = _extractFieldValues(result, sessionType);
+        if (tissueKey && result[tissueKey]) {
+          fields[tissueKey] = result[tissueKey]?.value ?? '';
+        }
+        fields[studyKey] = state.currentStudy;
+        state.reviewQueue.push({
+          type: sessionType,
+          reason: 'study_mismatch',
+          fields,
+          studyFound: String(result.study_id_found),
+          studySession: state.currentStudy,
+          addedAt: Date.now(),
+        });
+        updateReviewBadges();
+        await persistSession();
+        showScanScreen(false);
+        return;
+      }
       result[studyKey] = { value: state.currentStudy, confidence: 'locked' };
     }
 
@@ -944,24 +876,6 @@ function collectResultValues(cardEl) {
 }
 
 // ===== CONFIRM SCANS =====
-async function confirmBoxScan(values) {
-  const { size, posIndex, positions, number, label } = state.currentBox;
-  const cap = boxCapacity(size);
-  if (posIndex >= cap) { alert('Box is full - end this box to start a new one.'); return; }
-
-  const posKey = posKeyFromIndex(posIndex, size);
-  const item = { type: 'box', sessionId: state.sessionId, fields: values, position: posKey, boxNumber: number, boxLabel: label, status: 'auto' };
-  const id = await addItemToDB(item);
-  item.id = id;
-  state.items.push(item);
-  state.currentBox.positions[posKey] = id;
-  state.currentBox.posIndex++;
-  state.totalScans++;
-  _pushUndo({ id, displayName: values.sample_name || posKey, position: posKey });
-  await persistSession();
-  showScreen('box-scan', false);
-}
-
 async function confirmAntibodyScan(values) {
   state.pendingScan1 = null;
   const conflict = _findConflict('antibody', values);
@@ -1051,7 +965,7 @@ function addToReviewQueue(values, reason) {
 function updateReviewBadges() {
   const count = state.reviewQueue.length;
   const text  = count > 0 ? String(count) : '0';
-  ['reviewBadge1','reviewBadge2','reviewBadge3','reviewBadge4','reviewBadge5','reviewBadge6','reviewBadge7','reviewQueueBadge'].forEach(id => {
+  ['reviewBadge2','reviewBadge3','reviewBadge4','reviewBadge5','reviewBadge6','reviewBadge7','reviewQueueBadge'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.textContent = text; el.dataset.count = text; }
   });
@@ -1079,6 +993,23 @@ function renderReviewQueue() {
         <div class="review-item__actions">
           <button class="btn btn--primary" onclick="resolveReviewItem(${i},'update_qty')">Update to scanned</button>
           <button class="btn btn--ghost"   onclick="resolveReviewItem(${i},'keep_qty')">Keep sheet value</button>
+        </div>
+      </li>`;
+    }
+    if (item.reason === 'study_mismatch') {
+      const fields    = FIELDS[item.type] || [];
+      const nameField = fields.find(f => f.required) || fields[0];
+      const name      = item.fields?.[nameField?.key] || 'Scan result';
+      return `<li class="review-item">
+        <div class="review-item__header">
+          <span class="review-item__name">${esc(name)}</span>
+          <span class="type-badge type-badge--uncertain">study mismatch</span>
+        </div>
+        <p class="review-item__meta">Session: "${esc(item.studySession)}" — Label reads: "${esc(item.studyFound)}"</p>
+        <div class="review-item__actions">
+          <button class="btn btn--primary" onclick="resolveReviewItem(${i},'use_session_study')">Use session</button>
+          <button class="btn btn--outline" onclick="resolveReviewItem(${i},'use_label_study')">Use label</button>
+          <button class="btn btn--ghost"   onclick="resolveReviewItem(${i},'drop')">Drop scan</button>
         </div>
       </li>`;
     }
@@ -1123,6 +1054,20 @@ async function resolveReviewItem(index, action) {
     dbItem.id = id;
     state.items.push(dbItem);
     state.totalScans++;
+  } else if (action === 'use_session_study') {
+    const dbItem = { type: item.type, sessionId: state.sessionId, fields: item.fields, status: 'corrected' };
+    const id = await addItemToDB(dbItem);
+    dbItem.id = id;
+    state.items.push(dbItem);
+    state.totalScans++;
+  } else if (action === 'use_label_study') {
+    const studyKey = item.type === 'histology' ? 'study' : 'study_id';
+    const fields = { ...item.fields, [studyKey]: item.studyFound };
+    const dbItem = { type: item.type, sessionId: state.sessionId, fields, status: 'corrected' };
+    const id = await addItemToDB(dbItem);
+    dbItem.id = id;
+    state.items.push(dbItem);
+    state.totalScans++;
   }
   // 'drop' — do nothing to the DB
 
@@ -1138,9 +1083,7 @@ function _pushUndo(scan) {
   if (state.lastScans.length > 5) state.lastScans.pop();
   renderUndoStrip();
   renderLastScanned();
-  if (state.sessionType === 'box') {
-    _updateBoxStatus();
-  } else if (state.sessionType === 'chemical') {
+  if (state.sessionType === 'chemical') {
     _updateChemStatus();
   } else {
     const idMap = { antibody: 'abTotal', tissue: 'tissueTotal', histology: 'histTotal' };
@@ -1151,7 +1094,7 @@ function _pushUndo(scan) {
 }
 
 function renderUndoStrip() {
-  const ids  = { antibody: 'abUndoStrip', box: 'boxUndoStrip', tissue: 'tissueUndoStrip', histology: 'histUndoStrip', chemical: 'chemUndoStrip' };
+  const ids  = { antibody: 'abUndoStrip', tissue: 'tissueUndoStrip', histology: 'histUndoStrip', chemical: 'chemUndoStrip' };
   const strip = document.getElementById(ids[state.sessionType]);
   if (!strip) return;
   strip.innerHTML = state.lastScans.map(s =>
@@ -1175,10 +1118,6 @@ async function undoScan(itemId) {
       if (item.status === 'confirmed') item.status = 'imported';
       await updateItemInDB(item);
     } else {
-      if (item.position) {
-        delete state.currentBox.positions[item.position];
-        if (state.currentBox.posIndex > 0) state.currentBox.posIndex--;
-      }
       state.items.splice(idx, 1);
       await deleteItemFromDB(itemId);
     }
@@ -1189,33 +1128,17 @@ async function undoScan(itemId) {
   await persistSession();
   renderUndoStrip();
   renderLastScanned();
-  if (state.sessionType === 'box')      _updateBoxStatus();
   if (state.sessionType === 'chemical') _updateChemStatus();
 }
 
 function renderLastScanned() {
-  const ids  = { antibody: 'abLastScannedList', box: 'boxLastScannedList', tissue: 'tissueLastScannedList', histology: 'histLastScannedList', chemical: 'chemLastScannedList' };
+  const ids  = { antibody: 'abLastScannedList', tissue: 'tissueLastScannedList', histology: 'histLastScannedList', chemical: 'chemLastScannedList' };
   const list = document.getElementById(ids[state.sessionType]);
   if (!list) return;
-  const showPos = state.sessionType === 'box';
   list.innerHTML = state.lastScans.slice(0, 8).map(s =>
     `<li class="last-scanned__item">
-      ${showPos && s.position ? `<span class="last-scanned__pos">${esc(s.position)}</span>` : ''}
       <span class="last-scanned__name">${esc(s.displayName)}</span>
     </li>`).join('');
-}
-
-// ===== END BOX =====
-function renderEndBox() {
-  const boxItems = state.items.filter(i => i.boxNumber === state.currentBox.number);
-  document.getElementById('endBoxMeta').textContent =
-    `${boxItems.length} item${boxItems.length !== 1 ? 's' : ''} logged in Box ${state.currentBox.number || '-'}`;
-}
-
-function startNextBox() {
-  state.currentBox = { number: '', label: '', size: null, posIndex: 0, positions: {} };
-  state.lastScans  = [];
-  showScreen('box-setup');
 }
 
 async function finishSession() {
@@ -1227,7 +1150,6 @@ async function finishSession() {
     pendingScan1: null, currentStudy: null,
     chemSetup: { storageLocation: '', storageDevice: '' },
     chemRemovalStaging: {},
-    currentBox: { number: '', label: '', size: null, posIndex: 0, positions: {} },
   });
   showScreen('home', false);
 }
@@ -1240,17 +1162,14 @@ function renderSheetView() {
     ? state.items.filter(i => Object.values(i.fields || {}).some(v => String(v).toLowerCase().includes(search)))
     : state.items;
 
-  const extraH  = state.sessionType === 'box' ? ['Box','Pos'] : [];
-  const headers = [...extraH, ...fields.map(f => f.label)];
+  const headers = fields.map(f => f.label);
   document.getElementById('sheetHead').innerHTML =
     `<tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`;
 
   document.getElementById('sheetBody').innerHTML = visible.map(item => {
     const cls   = item.status === 'corrected' ? 'row--corrected' : 'row--auto';
-    const extra = state.sessionType === 'box'
-      ? `<td>${esc(item.boxNumber||'')}</td><td>${esc(item.position||'')}</td>` : '';
     const cells = fields.map(f => `<td title="${esc(item.fields?.[f.key]||'')}">${esc(item.fields?.[f.key]||'')}</td>`).join('');
-    return `<tr class="${cls}">${extra}${cells}</tr>`;
+    return `<tr class="${cls}">${cells}</tr>`;
   }).join('');
 
   const dlBtn = document.getElementById('downloadBtn');
@@ -1313,7 +1232,7 @@ function importMappedData() {
     return addItemToDB(item).then(id => { item.id = id; state.items.push(item); state.totalScans++; });
   })).then(() => {
     persistSession();
-    showScreen(sessionType === 'box' ? 'box-setup' : SCAN_SCREENS[sessionType]);
+    showScreen(SCAN_SCREENS[sessionType]);
   });
 }
 
@@ -1370,7 +1289,6 @@ function bindEvents() {
 
   // Session type buttons
   document.getElementById('startAntibodyBtn').addEventListener('click',  () => startSession('antibody'));
-  document.getElementById('startBoxBtn').addEventListener('click',       () => startSession('box'));
   document.getElementById('startTissueBtn').addEventListener('click',    () => startSession('tissue'));
   document.getElementById('startHistologyBtn').addEventListener('click', () => startSession('histology'));
 
@@ -1427,38 +1345,12 @@ function bindEvents() {
   });
   document.getElementById('confirmMappingBtn').addEventListener('click', importMappedData);
 
-  // Box setup
-  document.getElementById('boxNumber').addEventListener('input', validateBoxSetup);
-  document.getElementById('boxLabel').addEventListener('input',  e => { state.currentBox.label = e.target.value.trim(); });
-  document.querySelectorAll('.size-btn').forEach(btn =>
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('size-btn--active'));
-      btn.classList.add('size-btn--active');
-      state.currentBox.size = btn.dataset.size;
-      document.getElementById('gridHint').classList.remove('hidden');
-      renderBoxGrid();
-      validateBoxSetup();
-    })
-  );
-  document.getElementById('startBoxScanBtn').addEventListener('click', () => {
-    state.currentBox.number = document.getElementById('boxNumber').value.trim();
-    state.currentBox.label  = document.getElementById('boxLabel').value.trim();
-    showScreen('box-scan');
-  });
-
-  // Box scan
-  document.getElementById('boxScanBackBtn').addEventListener('click', goBack);
-  document.getElementById('boxReadBtn').addEventListener('click', () => handleReadLabel('box'));
-  document.getElementById('boxTypeBtn').addEventListener('click', () => showManualEntry('Enter box item details manually.'));
-  document.getElementById('endBoxBtn').addEventListener('click',  () => showScreen('end-box'));
-
   // Box result (shared with antibody result)
   document.getElementById('boxResultBackBtn').addEventListener('click', goBack);
   document.getElementById('boxConfirmBtn').addEventListener('click', async () => {
     const values = collectResultValues(document.getElementById('boxResultCard'));
-    if (state.sessionType === 'box')            await confirmBoxScan(values);
-    else if (state.sessionType === 'antibody')  await confirmAntibodyScan(values);
-    else if (state.sessionType === 'chemical')  await confirmChemicalScan(values);
+    if (state.sessionType === 'antibody')      await confirmAntibodyScan(values);
+    else if (state.sessionType === 'chemical') await confirmChemicalScan(values);
   });
   document.getElementById('boxReviewLaterBtn').addEventListener('click', () => {
     const card   = document.getElementById('boxResultCard');
@@ -1591,8 +1483,7 @@ function bindEvents() {
     document.getElementById('manualFormFields').querySelectorAll('input').forEach(i => { values[i.name] = i.value.trim(); });
     const req = scanFieldsFor(state.sessionType).find(f => f.required);
     if (req && !values[req.key]) { alert(`${req.label} is required.`); return; }
-    if (state.sessionType === 'box')            await confirmBoxScan(values);
-    else if (state.sessionType === 'antibody')  await confirmAntibodyScan(values);
+    if (state.sessionType === 'antibody')        await confirmAntibodyScan(values);
     else if (state.sessionType === 'tissue')    await confirmTissueScan(values);
     else if (state.sessionType === 'histology') await confirmHistologyScan(values);
     else if (state.sessionType === 'chemical')  await confirmChemicalScan(values);
@@ -1600,11 +1491,6 @@ function bindEvents() {
 
   // Review queue
   document.getElementById('reviewBackBtn').addEventListener('click', goBack);
-
-  // End box
-  document.getElementById('nextBoxBtn').addEventListener('click',      startNextBox);
-  document.getElementById('finishSessionBtn').addEventListener('click', finishSession);
-  document.getElementById('keepScanningBtn').addEventListener('click',  () => showScreen('box-scan', false));
 
   // Sheet view
   document.getElementById('sheetSearch').addEventListener('input', renderSheetView);

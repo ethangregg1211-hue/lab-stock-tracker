@@ -66,13 +66,6 @@
             <span class="session-card__desc">Track vials, lot numbers, and expiry dates</span>
           </div>
         </button>
-        <button class="session-card" id="startBoxBtn" disabled>
-          <i class="ti ti-box session-card__icon"></i>
-          <div class="session-card__content">
-            <span class="session-card__name">Box inventory</span>
-            <span class="session-card__desc">Log samples by position in a grid box</span>
-          </div>
-        </button>
         <button class="session-card" id="startTissueBtn" disabled>
           <i class="ti ti-cube session-card__icon"></i>
           <div class="session-card__content">
@@ -148,7 +141,6 @@
         <select id="mappingSessionType" class="input">
           <option value="">Select type...</option>
           <option value="antibody">Antibody stocks</option>
-          <option value="box">Box inventory</option>
           <option value="tissue">Tissue blocks</option>
           <option value="histology">Histology slides</option>
           <option value="chemical">Chemical inventory</option>
@@ -167,74 +159,6 @@
       <div class="table-scroll" id="previewTableWrapper"></div>
       <button class="btn btn--primary btn--full" id="confirmMappingBtn">Import data</button>
     </div>
-  </div>
-
-  <!-- ======== BOX SETUP ======== -->
-  <div class="screen" id="screen-box-setup">
-    <header class="app-header">
-      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
-      <h1 class="app-title">Box setup</h1>
-    </header>
-    <div class="screen-body">
-      <label class="field-group">
-        <span class="field-label">Box number</span>
-        <input type="text" id="boxNumber" class="input" placeholder="e.g. Box 42" autocomplete="off">
-      </label>
-      <label class="field-group">
-        <span class="field-label">Box label / description</span>
-        <input type="text" id="boxLabel" class="input" placeholder="e.g. Primary antibodies 2024" autocomplete="off">
-      </label>
-      <div class="field-group">
-        <span class="field-label">Box size</span>
-        <div class="size-picker" id="sizePicker">
-          <button class="size-btn" data-size="7x7">7 x 7</button>
-          <button class="size-btn" data-size="9x9">9 x 9</button>
-          <button class="size-btn" data-size="10x10">10 x 10</button>
-        </div>
-      </div>
-      <div class="grid-preview-wrap">
-        <p class="muted-text grid-hint hidden" id="gridHint">A1 is highlighted as the first position.</p>
-        <div class="box-grid-scroll">
-          <div class="box-grid" id="boxGrid"></div>
-        </div>
-      </div>
-      <button class="btn btn--primary btn--full" id="startBoxScanBtn" disabled>Start scanning</button>
-    </div>
-  </div>
-
-  <!-- ======== BOX SCAN ======== -->
-  <div class="screen" id="screen-box-scan">
-    <header class="app-header">
-      <button class="icon-btn" id="boxScanBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
-      <h1 class="app-title">Box inventory</h1>
-    </header>
-    <div class="status-bar" id="boxStatusBar">
-      <span id="bsBox">Box -</span>
-      <span id="bsPos">- / -</span>
-      <span id="bsTotal">0 scans</span>
-    </div>
-    <div class="camera-slot" id="boxCameraSlot"></div>
-    <div class="scan-cap-banner hidden" id="scanCapBanner">
-      <i class="ti ti-alert-triangle"></i> Approaching 500-scan limit - 450 reached
-    </div>
-    <div class="undo-strip-wrap">
-      <div class="undo-strip" id="boxUndoStrip"></div>
-    </div>
-    <div class="last-scanned-section">
-      <p class="last-scanned__title">Last scanned</p>
-      <ul class="last-scanned__list" id="boxLastScannedList"></ul>
-    </div>
-    <button class="btn btn--ghost btn--full end-box-btn" id="endBoxBtn">End box</button>
-    <div class="scan-footer">
-      <p class="camera-note">For permanent camera access, add this app to your home screen via Safari.</p>
-      <button class="scan-type-link" id="boxTypeBtn">Can't scan? Type it in</button>
-      <button class="shutter-btn" id="boxReadBtn"><i class="ti ti-camera"></i> Read label</button>
-    </div>
-    <nav class="nav-bar">
-      <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>
-      <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge1">0</span></button>
-      <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
-    </nav>
   </div>
 
   <!-- ======== BOX RESULT ======== -->
@@ -494,24 +418,6 @@
       <button class="nav-btn nav-btn--active" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge4">0</span></button>
       <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
     </nav>
-  </div>
-
-  <!-- ======== END BOX ======== -->
-  <div class="screen" id="screen-end-box">
-    <header class="app-header">
-      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
-      <h1 class="app-title">Box complete</h1>
-    </header>
-    <div class="screen-body screen-body--center">
-      <div class="success-check"><i class="ti ti-check"></i></div>
-      <h2 class="success-heading">Box complete</h2>
-      <p class="success-meta" id="endBoxMeta"></p>
-      <div class="btn-stack">
-        <button class="btn btn--primary btn--full" id="nextBoxBtn">Start next box</button>
-        <button class="btn btn--outline btn--full" id="finishSessionBtn">Finish session</button>
-        <button class="btn btn--ghost btn--full" id="keepScanningBtn">Keep scanning</button>
-      </div>
-    </div>
   </div>
 
   <!-- ======== CHEMICAL RECONCILE ======== -->

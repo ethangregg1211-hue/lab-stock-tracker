@@ -23,14 +23,10 @@ function exportToExcel(items, sessionType, filename) {
 
   // FIELDS is defined globally in app.js
   const fields = (typeof FIELDS !== 'undefined' && FIELDS[sessionType]) || [];
-  const extraCols = sessionType === 'box' ? ['Box', 'Position'] : [];
-  const headers = [...extraCols, ...fields.map(f => f.label), 'Date added', 'Status'];
+  const headers = [...fields.map(f => f.label), 'Date added', 'Status'];
 
   const wsRows = items.map(item => {
     const row = [];
-    if (sessionType === 'box') {
-      row.push(item.boxNumber || '', item.position || '');
-    }
     fields.forEach(f => row.push(item.fields?.[f.key] ?? ''));
     row.push(item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '');
     row.push(item.status || 'auto');
@@ -134,13 +130,6 @@ function guessFieldFromHeader(header, sessionType) {
       concentration:  ['conc', 'concentration', 'titer', 'mgml', 'ugml'],
       expiry:         ['expiry', 'expiration', 'exp', 'expirydate', 'useby', 'bestbefore'],
       storage:        ['storage', 'storagecond', 'condition', 'temp', 'temperature', 'store'],
-    },
-    box: {
-      sample_name: ['sample', 'name', 'samplename', 'sampleid', 'id', 'label', 'tubeid'],
-      date:        ['date', 'dateadded', 'created', 'collected', 'frozen', 'stored'],
-      researcher:  ['researcher', 'initials', 'user', 'by', 'tech', 'operator', 'pi'],
-      volume:      ['volume', 'amount', 'vol', 'qty', 'quantity', 'ul', 'ml', 'conc'],
-      description: ['desc', 'description', 'notes', 'content', 'type', 'comment'],
     },
     histology: {
       study:          ['study', 'studyid', 'studyno', 'project', 'protocol', 'experiment'],

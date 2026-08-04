@@ -20,10 +20,6 @@ For every field return an object: { "value": "<string or null>", "confidence": "
 - "low"    = not found or completely unreadable
 Example: { "catalog_number": { "value": "ab12345", "confidence": "high" }, "lot_number": { "value": null, "confidence": "low" }, ... }${SHARED_RULES}`,
 
-  box: `You are reading a lab sample tube, cryovial, or storage box label. Extract these fields and return ONLY a valid JSON object, no other text:
-sample_name, date, researcher, volume, description.
-For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }${SHARED_RULES}`,
-
   histology: `You are reading a histology slide label. Extract these fields and return ONLY a valid JSON object, no other text:
 study, sample_mouse_id, tissue, stain, notes.
 For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }${SHARED_RULES}${TISSUE_PRESET_RULE}`,
@@ -54,10 +50,10 @@ async function readLabelWithClaude(base64Image, sessionType, options = {}) {
     throw new Error('You are offline. The scan has been queued and will retry when reconnected.');
   }
 
-  let prompt = PROMPTS[sessionType] || PROMPTS.box;
+  let prompt = PROMPTS[sessionType] || PROMPTS.antibody;
   if (options.studyName) {
     const studyKey = sessionType === 'histology' ? 'study' : 'study_id';
-    prompt += `\nSESSION CONTEXT: The study name for this session is "${options.studyName}". Return this exact value for the ${studyKey} field with confidence "high". Do not try to read the study name from the label.`;
+    prompt += `\nSESSION CONTEXT: The study name for this session is "${options.studyName}". Read the label and look for a study ID. If you find one that is meaningfully different from "${options.studyName}" (more than minor capitalization or spacing differences), add "study_mismatch": true and "study_id_found": "<what you read>" to your JSON response. Either way, set ${studyKey} to "${options.studyName}" with confidence "high".`;
   }
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
