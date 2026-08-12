@@ -775,15 +775,17 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
   font-size: 13px;
   line-height: 1.4;
 }
-.download-fallback-link {
+.download-open-link {
   display: block;
   margin: 6px 0 0;
-  padding: 10px;
+  padding: 10px 12px;
   background: #dbeafe;
   color: #1d4ed8;
   border-radius: 6px;
   font-size: 13px;
-  word-break: break-all;
+  font-weight: 500;
+  text-decoration: none;
+  text-align: center;
 }
 .hidden { display: none !important; }
 

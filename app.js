@@ -1604,33 +1604,37 @@ async function _importChemicalsFromSheet() {
 }
 
 // ===== MOBILE-SAFE DOWNLOAD =====
-function _mobileDownload(wb, filename) {
-  const errEl  = document.getElementById('downloadError');
-  const linkEl = document.getElementById('downloadFallbackLink');
-  if (errEl)  { errEl.textContent = ''; errEl.classList.add('hidden'); }
-  if (linkEl) linkEl.classList.add('hidden');
+let _lastExcelBlob = null;
 
+function downloadExcel(blob, filename) {
   try {
-    if (!window.XLSX) throw new Error('Excel library not loaded.');
-    // Base64 data URI — works in mobile Safari without popup blockers
-    const b64     = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-    const dataUri = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${b64}`;
-    const win     = window.open(dataUri, '_blank');
-    if (!win || win.closed || typeof win.closed === 'undefined') {
-      // Popup was blocked — show a long-press link fallback
-      if (linkEl) {
-        linkEl.href        = dataUri;
-        linkEl.download    = filename;
-        linkEl.textContent = `Tap and hold to save: ${filename}`;
-        linkEl.classList.remove('hidden');
-      }
-    }
-  } catch (err) {
-    if (errEl) {
-      errEl.textContent = `Download failed: ${err.message}`;
-      errEl.classList.remove('hidden');
-    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    // Fall back to navigating current tab — triggers iOS "Open in…" sheet
+    const reader = new FileReader();
+    reader.onload = function() {
+      window.location.href = reader.result;
+    };
+    reader.readAsDataURL(blob);
   }
+}
+
+function _openExcelFallback() {
+  if (!_lastExcelBlob) return;
+  const url = URL.createObjectURL(_lastExcelBlob);
+  window.open(url, '_blank');
+}
+
+function _wbToBlob(wb) {
+  const arr = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  return new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 // ===== LOADING =====
@@ -1904,28 +1908,41 @@ function bindEvents() {
   // Sheet view
   document.getElementById('sheetSearch').addEventListener('input', renderSheetView);
   document.getElementById('downloadBtn').addEventListener('click', () => {
-    const errEl = document.getElementById('downloadError');
-    if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+    const errEl  = document.getElementById('downloadError');
+    const openEl = document.getElementById('downloadOpenLink');
+    if (errEl)  { errEl.textContent = ''; errEl.classList.add('hidden'); }
+    if (openEl) openEl.classList.add('hidden');
 
     if (state.reviewQueue.length) {
       if (errEl) { errEl.textContent = 'Clear the review queue before downloading.'; errEl.classList.remove('hidden'); }
       return;
     }
 
+    if (!window.XLSX) {
+      if (errEl) { errEl.textContent = 'Excel library not loaded.'; errEl.classList.remove('hidden'); }
+      return;
+    }
+
     const date = new Date().toISOString().slice(0, 10);
+    let wb, filename;
 
     if (state.sessionType === 'chemical') {
       const unreconciled = state.items.filter(i => i.type === 'chemical' && !i.presentConfirmed).length;
       if (unreconciled && errEl) {
-        errEl.textContent = `${unreconciled} chemical${unreconciled !== 1 ? 's' : ''} haven't been reconciled. Export continuing anyway.`;
+        errEl.textContent = `${unreconciled} chemical${unreconciled !== 1 ? 's' : ''} haven't been reconciled — exporting anyway.`;
         errEl.classList.remove('hidden');
       }
-      const wb = exportChemicalTemplate(state.items.filter(i => i.type === 'chemical'));
-      if (wb) _mobileDownload(wb, `chemical-import-${date}.xlsx`);
+      wb = exportChemicalTemplate(state.items.filter(i => i.type === 'chemical'));
+      filename = `chemical-import-${date}.xlsx`;
     } else {
-      const wb = exportToExcel(state.items, state.sessionType);
-      if (wb) _mobileDownload(wb, `labscan-${date}.xlsx`);
+      wb = exportToExcel(state.items, state.sessionType);
+      filename = `labscan-${date}.xlsx`;
     }
+
+    if (!wb) return;
+    _lastExcelBlob = _wbToBlob(wb);
+    downloadExcel(_lastExcelBlob, filename);
+    if (openEl) openEl.classList.remove('hidden');
   });
 
   // Camera controls
