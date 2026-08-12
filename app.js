@@ -162,7 +162,6 @@ const state = {
   currentStudy: null,
   histologyMode: 'slides',
   activeTemplate: null,
-  chemSetup: { storageLocation: '', storageDevice: '' },
   chemRemovalStaging: {},
   lastScans: [],
   pendingResult: null,
@@ -242,7 +241,6 @@ function _onEnter(id) {
     'session-preview':       initSessionPreview,
     'template-library':      initTemplateLibrary,
     'template-designer':     initTemplateDesigner,
-    'chemical-setup':        initChemicalSetup,
     'antibody-scan':         initAntibodyScan,
     'histology-scan':        initHistologyScan,
     'chemical-scan':         initChemicalScan,
@@ -307,7 +305,6 @@ function startSession(type) {
     currentStudy: null,
     histologyMode: 'slides',
     activeTemplate: null,
-    chemSetup: { storageLocation: '', storageDevice: '' },
     chemRemovalStaging: {},
   });
   if (type === 'histology') {
@@ -316,7 +313,7 @@ function startSession(type) {
     if (state.uploadedRows.length > 0) {
       _tryAutoMapChemicals();
     } else {
-      showScreen('chemical-setup');
+      showScreen('chemical-scan');
     }
   } else {
     showScreen(SCAN_SCREENS[type]);
@@ -336,7 +333,6 @@ async function resumeSessionFromDB() {
     currentStudy:       session.currentStudy       || null,
     histologyMode:      session.histologyMode      || 'slides',
     activeTemplate:     session.activeTemplate     || null,
-    chemSetup:          session.chemSetup          || { storageLocation: '', storageDevice: '' },
     chemRemovalStaging: session.chemRemovalStaging || {},
   });
   document.getElementById('resumeCard').classList.add('hidden');
@@ -360,7 +356,6 @@ async function persistSession() {
       currentStudy:       state.currentStudy,
       histologyMode:      state.histologyMode,
       activeTemplate:     state.activeTemplate,
-      chemSetup:          state.chemSetup,
       chemRemovalStaging: state.chemRemovalStaging,
     });
   } catch (e) {
@@ -376,7 +371,6 @@ async function finishSession() {
     items: [], reviewQueue: [], lastScans: [],
     pendingScan1: null, currentStudy: null,
     histologyMode: 'slides', activeTemplate: null,
-    chemSetup: { storageLocation: '', storageDevice: '' },
     chemRemovalStaging: {},
   });
   showScreen('home', false);
@@ -704,19 +698,6 @@ async function initHistologyScan() {
   await startCamera('histCameraSlot');
 }
 
-// ===== CHEMICAL SETUP =====
-function initChemicalSetup() {
-  document.getElementById('chemStorageLocationInput').value = '';
-  document.getElementById('chemStorageDeviceInput').value   = '';
-  document.getElementById('startChemScanBtn').disabled = true;
-}
-
-function _validateChemSetup() {
-  const loc = document.getElementById('chemStorageLocationInput').value.trim();
-  const dev = document.getElementById('chemStorageDeviceInput').value.trim();
-  document.getElementById('startChemScanBtn').disabled = !(loc && dev);
-}
-
 // ===== CHEMICAL SCAN =====
 async function initChemicalScan() {
   _updateChemStatus();
@@ -852,8 +833,8 @@ function _buildChemicalNewForm(scanValues) {
   document.getElementById('chemNewAmount').value      = '';
   document.getElementById('chemNewUnit').value        = '';
   document.getElementById('chemNewReceiptDate').value = '';
-  document.getElementById('chemNewLocation').value    = state.chemSetup.storageLocation;
-  document.getElementById('chemNewDevice').value      = state.chemSetup.storageDevice;
+  document.getElementById('chemNewLocation').value    = '';
+  document.getElementById('chemNewDevice').value      = '';
 }
 
 function initChemicalNewDetails() {
@@ -1634,7 +1615,7 @@ function importMappedData() {
 
   _importChemicalRows(mapping).then(() => {
     persistSession();
-    showScreen('chemical-setup');
+    showScreen('chemical-scan');
   });
 }
 
@@ -1662,7 +1643,7 @@ async function _tryAutoMapChemicals() {
 
   if (allFound) {
     await _importChemicalRows(mapping);
-    showScreen('chemical-setup');
+    showScreen('chemical-scan');
   } else {
     document.getElementById('uploadedFileName').textContent = state.uploadedFileName || '';
     buildMappingTable(state.uploadedHeaders);
@@ -1913,14 +1894,6 @@ function bindEvents() {
 
   // Chemical setup
   document.getElementById('startChemicalBtn').addEventListener('click', () => startSession('chemical'));
-  document.getElementById('chemStorageLocationInput').addEventListener('input', _validateChemSetup);
-  document.getElementById('chemStorageDeviceInput').addEventListener('input',   _validateChemSetup);
-  document.getElementById('startChemScanBtn').addEventListener('click', () => {
-    state.chemSetup.storageLocation = document.getElementById('chemStorageLocationInput').value.trim();
-    state.chemSetup.storageDevice   = document.getElementById('chemStorageDeviceInput').value.trim();
-    showScreen('chemical-scan');
-  });
-
   // Chemical scan
   document.getElementById('chemScanBackBtn').addEventListener('click', goBack);
   document.getElementById('chemReadBtn').addEventListener('click', () => handleReadLabel('chemical'));
