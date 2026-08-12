@@ -1651,6 +1651,7 @@ function bindEvents() {
   );
   document.getElementById('saveApiKeyBtn').addEventListener('click', () => {
     const k = document.getElementById('apiKeyInput').value.trim();
+    console.log('[LabScan] Saving API key to localStorage:', k ? k.slice(0, 20) + '…' : '(empty)');
     if (k) localStorage.setItem('anthropic_api_key', k);
     const chemFields = {
       chem_pi_code:  'chemPiCode',
