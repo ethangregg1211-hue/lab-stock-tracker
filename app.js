@@ -58,7 +58,7 @@ const CONFLICT_KEYS = {
 };
 
 const SCAN_FIELD_OVERRIDES = {
-  chemical: ['chemical_description','cas_num','catalog_number','vendor','physical_state','lot_number','concentration'],
+  chemical: ['chemical_description','catalog_number','lot_number','vendor','physical_state','cas_num'],
 };
 
 const TISSUE_PRESETS = [
@@ -162,6 +162,7 @@ const state = {
   uploadedHeaders: [],
   uploadedRows: [],
   uploadedFileName: '',
+  pendingChemMatch: null,
 };
 
 // ===== TEMPLATE DESIGNER STATE =====
@@ -293,6 +294,7 @@ function startSession(type) {
     pendingResult: null,
     pendingScan1: null,
     pendingConflict: null,
+    pendingChemMatch: null,
     currentStudy: null,
     histologyMode: 'slides',
     activeTemplate: null,
@@ -325,7 +327,7 @@ async function resumeSessionFromDB() {
     chemRemovalStaging: session.chemRemovalStaging || {},
   });
   document.getElementById('resumeCard').classList.add('hidden');
-  showScreen(SCAN_SCREENS[state.sessionType]);
+  showScanScreen(false);
 }
 
 async function discardSessionFromDB() {
@@ -723,62 +725,102 @@ function _updateChemStatus() {
 // ===== CHEMICAL MATCHING =====
 function _norm(v) { return String(v ?? '').trim().toLowerCase(); }
 
+function _stripCatalogSuffix(catNum) {
+  if (!catNum) return catNum;
+  return String(catNum).replace(/-\d+(?:\.\d+)?\s*(?:UG|MG|G|KG|ML|UL|L)$/i, '').trim();
+}
+
 function _findChemicalMatch(values) {
   const name    = _norm(values.chemical_description);
-  const cas     = _norm(values.cas_num);
-  const catalog = _norm(values.catalog_number);
+  const catalog = _norm(_stripCatalogSuffix(values.catalog_number || ''));
   if (!name) return null;
 
-  const candidates = state.items.filter(i => i.type === 'chemical' && _norm(i.fields.chemical_description) === name);
+  // Only consider items not yet confirmed present this session
+  const candidates = state.items.filter(i => i.type === 'chemical' && !i.presentConfirmed);
   if (!candidates.length) return null;
 
-  if (cas && catalog) {
-    const hit = candidates.find(i => _norm(i.fields.cas_num) === cas && _norm(i.fields.catalog_number) === catalog);
-    if (hit) return hit;
-  }
+  // Primary: fuzzy name (≥0.85) + exact catalog match (both suffix-stripped)
   if (catalog) {
-    const hit = candidates.find(i => _norm(i.fields.catalog_number) === catalog);
+    const hit = candidates.find(i => {
+      const iCatalog = _norm(_stripCatalogSuffix(i.fields.catalog_number || ''));
+      return iCatalog === catalog && _stringSimilarity(name, _norm(i.fields.chemical_description)) >= 0.85;
+    });
     if (hit) return hit;
   }
-  if (cas) {
-    const hit = candidates.find(i => _norm(i.fields.cas_num) === cas);
-    if (hit) return hit;
-  }
-  return candidates[0];
+
+  // Secondary: name-only fuzzy match (≥0.90)
+  const hit = candidates.find(i => _stringSimilarity(name, _norm(i.fields.chemical_description)) >= 0.90);
+  return hit || null;
 }
 
 async function confirmChemicalScan(values) {
+  if (values.catalog_number) values.catalog_number = _stripCatalogSuffix(values.catalog_number);
   const match = _findChemicalMatch(values);
-
   if (match) {
-    match.presentConfirmed = true;
-    if (match.status === 'imported') match.status = 'confirmed';
-    await updateItemInDB(match);
-    const idx = state.items.findIndex(i => i.id === match.id);
-    if (idx !== -1) state.items[idx] = match;
-
-    const unitMismatch   = values.unit          && match.fields.unit          && _norm(values.unit)          !== _norm(match.fields.unit);
-    const chUnitMismatch = values.chemical_unit  && match.fields.chemical_unit && _norm(values.chemical_unit) !== _norm(match.fields.chemical_unit);
-    if (unitMismatch || chUnitMismatch) {
-      state.reviewQueue.push({
-        type: 'chemical',
-        reason: 'quantity_mismatch',
-        fields: values,
-        existingId: match.id,
-        existingFields: { ...match.fields },
-        addedAt: Date.now(),
-      });
-      updateReviewBadges();
-    }
-
-    state.totalScans++;
-    _pushUndo({ id: match.id, displayName: match.fields.chemical_description || 'Unknown', chemMatched: true });
-    await persistSession();
-    showScanScreen(false);
+    await _confirmChemPresent(match);
   } else {
     state.pendingResult = values;
     _buildChemicalNewForm(values);
     showScreen('chemical-new-details');
+  }
+}
+
+async function _confirmChemPresent(match) {
+  match.presentConfirmed = true;
+  if (match.status === 'imported') match.status = 'confirmed';
+  await updateItemInDB(match);
+  const idx = state.items.findIndex(i => i.id === match.id);
+  if (idx !== -1) state.items[idx] = match;
+  state.totalScans++;
+  state.pendingChemMatch = null;
+  state.pendingResult    = null;
+  _pushUndo({ id: match.id, displayName: match.fields.chemical_description || 'Unknown', chemMatched: true });
+  await persistSession();
+  showScanScreen(false);
+}
+
+function _resetBoxResultForAntibody() {
+  const titleEl    = document.querySelector('#screen-box-result .app-title');
+  const confirmBtn = document.getElementById('boxConfirmBtn');
+  const reviewBtn  = document.getElementById('boxReviewLaterBtn');
+  if (titleEl)    titleEl.textContent    = 'Scan result';
+  if (confirmBtn) confirmBtn.textContent = 'Confirm and add';
+  if (reviewBtn)  reviewBtn.textContent  = 'Review later';
+  state.pendingChemMatch = null;
+}
+
+function _renderChemicalResultCard(result, match) {
+  const confirmBtn = document.getElementById('boxConfirmBtn');
+  const reviewBtn  = document.getElementById('boxReviewLaterBtn');
+  const card       = document.getElementById('boxResultCard');
+  const titleEl    = document.querySelector('#screen-box-result .app-title');
+
+  if (match) {
+    if (titleEl)    titleEl.textContent    = 'Match found';
+    if (confirmBtn) confirmBtn.textContent = 'Confirm present';
+    if (reviewBtn)  reviewBtn.textContent  = 'Add as new entry instead';
+
+    const name    = esc(match.fields.chemical_description || '');
+    const catalog = esc(_stripCatalogSuffix(match.fields.catalog_number || ''));
+    card.innerHTML = `<div class="chem-match-banner">
+      <i class="ti ti-circle-check chem-match-banner__icon"></i>
+      <div class="chem-match-banner__body">
+        <p class="chem-match-banner__label">Matched in your inventory sheet</p>
+        <p class="chem-match-banner__name">${name}</p>
+        ${catalog ? `<p class="chem-match-banner__catalog">Cat # ${catalog}</p>` : ''}
+      </div>
+    </div>`;
+  } else {
+    if (titleEl)    titleEl.textContent    = 'New chemical';
+    if (confirmBtn) confirmBtn.textContent = 'Add to inventory';
+    if (reviewBtn)  reviewBtn.textContent  = 'Review later';
+
+    // Hide CAS if not found; default physical_state shown as read
+    const displayFields = scanFieldsFor('chemical').filter(f => {
+      if (f.key === 'cas_num') return !!(result[f.key]?.value);
+      return true;
+    });
+    renderResultCard(displayFields, result, card);
   }
 }
 
@@ -851,7 +893,7 @@ function renderChemicalReconcile() {
       <div class="review-item__header">
         <span class="review-item__name">${esc(item.fields.chemical_description || 'Unknown chemical')}</span>
       </div>
-      <p class="review-item__meta">${esc(item.fields.storage_location || '')}</p>
+      <p class="review-item__meta">${esc(_stripCatalogSuffix(item.fields.catalog_number || '') || item.fields.storage_location || '')}</p>
       <div class="review-item__actions">
         <button class="btn ${keepCls}"   onclick="stageChemReconcile(${item.id},'keep')">Still present</button>
         <button class="btn ${removeCls}" onclick="stageChemReconcile(${item.id},'remove')">Remove</button>
@@ -961,6 +1003,7 @@ async function handleReadLabel(sessionType) {
         const merged = _mergeScanResults(state.pendingScan1, result2);
         state.pendingScan1  = null;
         state.pendingResult = merged;
+        _resetBoxResultForAntibody();
         showScreen('box-result');
         renderResultCard(FIELDS['antibody'], merged, document.getElementById('boxResultCard'));
       } catch (err) {
@@ -1008,6 +1051,23 @@ async function handleReadLabel(sessionType) {
         return;
       }
       result.study_id = { value: state.currentStudy, confidence: 'locked' };
+    }
+
+    // Chemical: strip catalog suffix, default physical_state, run match, show custom card
+    if (sessionType === 'chemical') {
+      if (result.catalog_number?.value) {
+        result.catalog_number.value = _stripCatalogSuffix(result.catalog_number.value);
+      }
+      if (!result.physical_state?.value) {
+        result.physical_state = { value: 'Solid', confidence: 'high' };
+      }
+      const extractedVals = _extractFieldValues(result, 'chemical');
+      const chemMatch = _findChemicalMatch(extractedVals);
+      state.pendingChemMatch = chemMatch || null;
+      state.pendingResult    = result;
+      showScreen('box-result');
+      _renderChemicalResultCard(result, chemMatch);
+      return;
     }
 
     state.pendingResult = result;
@@ -1353,22 +1413,6 @@ function renderReviewQueue() {
   empty.classList.add('hidden');
 
   list.innerHTML = queue.map((item, i) => {
-    if (item.reason === 'quantity_mismatch') {
-      const name     = item.fields?.chemical_description || item.existingFields?.chemical_description || 'Unknown chemical';
-      const existQty = [item.existingFields?.unit, item.existingFields?.chemical_unit].filter(Boolean).join(' ') || '(none)';
-      const scanQty  = [item.fields?.unit,         item.fields?.chemical_unit        ].filter(Boolean).join(' ') || '(none)';
-      return `<li class="review-item">
-        <div class="review-item__header">
-          <span class="review-item__name">${esc(name)}</span>
-          <span class="type-badge type-badge--uncertain">qty mismatch</span>
-        </div>
-        <p class="review-item__meta">Sheet says ${esc(existQty)} — scan suggests ${esc(scanQty)}</p>
-        <div class="review-item__actions">
-          <button class="btn btn--primary" onclick="resolveReviewItem(${i},'update_qty')">Update to scanned</button>
-          <button class="btn btn--ghost"   onclick="resolveReviewItem(${i},'keep_qty')">Keep sheet value</button>
-        </div>
-      </li>`;
-    }
     if (item.reason === 'study_mismatch') {
       const fields    = [...(FIELDS[item.type] || []), ...(state.activeTemplate?.customFields || [])];
       const nameField = fields.find(f => f.required) || fields[0];
@@ -1407,17 +1451,7 @@ async function resolveReviewItem(index, action) {
   const item = state.reviewQueue[index];
   if (!item) return;
 
-  if (action === 'update_qty') {
-    const existing = state.items.find(i => i.id === item.existingId);
-    if (existing) {
-      existing.fields.unit          = item.fields.unit          ?? existing.fields.unit;
-      existing.fields.chemical_unit = item.fields.chemical_unit ?? existing.fields.chemical_unit;
-      existing.status = 'corrected';
-      await updateItemInDB(existing);
-    }
-  } else if (action === 'keep_qty') {
-    // no-op
-  } else if (action === 'add') {
+  if (action === 'add') {
     const dbItem = {
       type: item.type, sessionId: state.sessionId,
       fields: item.fields, status: 'corrected',
@@ -1730,11 +1764,39 @@ function bindEvents() {
   // Box result (shared antibody result screen)
   document.getElementById('boxResultBackBtn').addEventListener('click', goBack);
   document.getElementById('boxConfirmBtn').addEventListener('click', async () => {
+    if (state.sessionType === 'chemical') {
+      if (state.pendingChemMatch) {
+        await _confirmChemPresent(state.pendingChemMatch);
+      } else {
+        const vals = _extractFieldValues(state.pendingResult, 'chemical');
+        _buildChemicalNewForm(vals);
+        state.pendingResult = vals;
+        showScreen('chemical-new-details');
+      }
+      return;
+    }
     const values = collectResultValues(document.getElementById('boxResultCard'));
-    if (state.sessionType === 'antibody')      await confirmAntibodyScan(values);
-    else if (state.sessionType === 'chemical') await confirmChemicalScan(values);
+    await confirmAntibodyScan(values);
   });
   document.getElementById('boxReviewLaterBtn').addEventListener('click', () => {
+    if (state.sessionType === 'chemical') {
+      if (state.pendingChemMatch) {
+        // "Add as new entry instead" — clear match, go to new-details form
+        state.pendingChemMatch = null;
+        const vals = _extractFieldValues(state.pendingResult, 'chemical');
+        _buildChemicalNewForm(vals);
+        state.pendingResult = vals;
+        showScreen('chemical-new-details');
+      } else {
+        // Review later — add to queue, back to scanner
+        const vals = _extractFieldValues(state.pendingResult, 'chemical');
+        addToReviewQueue(vals, 'uncertain');
+        state.pendingChemMatch = null;
+        state.pendingResult    = null;
+        showScanScreen(false);
+      }
+      return;
+    }
     const card   = document.getElementById('boxResultCard');
     const values = collectResultValues(card);
     const reason = card.querySelector('.field-row--unreadable') ? 'unreadable'
@@ -1757,6 +1819,7 @@ function bindEvents() {
   document.getElementById('abUseFirstScanBtn').addEventListener('click', () => {
     state.pendingResult = state.pendingScan1;
     state.pendingScan1  = null;
+    _resetBoxResultForAntibody();
     showScreen('box-result', false);
     renderResultCard(FIELDS['antibody'], state.pendingResult, document.getElementById('boxResultCard'));
   });

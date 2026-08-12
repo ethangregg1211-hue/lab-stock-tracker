@@ -28,12 +28,28 @@ For every field return an object: { "value": "<string or null>", "confidence": "
   histology: `You are reading a histology label. Extract the specified fields and return ONLY a valid JSON object, no other text.
 For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }${SHARED_RULES}${TISSUE_PRESET_RULE}${MOUSE_ID_RULE}`,
 
-  chemical: `You are reading a chemical container label. Extract these fields and return ONLY a valid JSON object, no other text:
-chemical_description, cas_num, catalog_number, vendor, physical_state, lot_number, concentration.
-For every field return an object: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }
-- "high"   = clearly legible text
-- "medium" = partially readable, faded, or inferred from context
-- "low"    = not found or completely unreadable${SHARED_RULES}`,
+  chemical: `You are reading a chemical reagent bottle label in a research lab. Extract the following fields and return ONLY a valid JSON object, no other text.
+
+For every field return: { "value": "<string or null>", "confidence": "high" | "medium" | "low" }
+- "high" = clearly read from printed text
+- "medium" = partially obscured or not fully certain
+- "low" = guessing or not found
+
+Fields to extract:
+
+chemical_description: The largest printed text on the label, usually in the center. This is the full chemical name (examples: Sodium pyruvate, Carbenicillin disodium salt, N-Ethylmaleimide, Collagenase Type 3, Tamoxifen). Ignore any handwritten text — only read printed text.
+
+catalog_number: Usually in the top left corner. Often includes a size suffix (examples: P2256-5G, C1389-1G, E3876-5G, LS004182). Strip the size suffix before returning — P2256-5G becomes P2256, C1389-1G becomes C1389. For Worthington Biochem labels it will be explicitly labeled CAT #. For Sigma and Sigma-Aldrich labels it appears in the top left without a label.
+
+lot_number: Usually in the top right corner, explicitly labeled Lot # or LOT #. Examples: SLBV6133, 123M4817V, 44B14762, WXBC0652VP. Return the full lot number as printed.
+
+vendor: The company name or logo printed on the label. Common vendors: Sigma, Sigma-Aldrich, Worthington Biochem, Fisher, Aldrich, Millipore. Sigma-Aldrich labels have a red and white banner at the top. Worthington Biochem labels say Worthington-Biochem.com at the top. Return the vendor name as it appears on the label.
+
+physical_state: Usually not printed on the label. Return "Solid" as the default unless the label explicitly says Liquid or Solution.
+
+cas_num: If present, labeled CAS # or CAS-No on the label. Not always visible. Return null if not found — do not guess.
+
+IMPORTANT: Ignore all handwritten text on the label. Lab members write opened dates, lab names, initials, and received dates directly on the bottle (examples: opened 6/12/26 AK, Welm 1.23.17, KAT, 2/23/15CID). These are annotations added after purchase — do not return them as field values. Never append ? to any field value. Never return handwritten text as a field value.`,
 };
 
 const _offlineQueue = [];

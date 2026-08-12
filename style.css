@@ -1085,6 +1085,47 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
 }
 .slide-zone--filled:active { background: var(--red-bg); border-color: var(--red); color: var(--red); }
 
+/* ===== CHEMICAL MATCH BANNER ===== */
+.chem-match-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: var(--green-bg, #e6f9ed);
+  border: 1.5px solid var(--green, #22c55e);
+  border-radius: 12px;
+  padding: 16px;
+}
+.chem-match-banner__icon {
+  font-size: 28px;
+  color: var(--green, #22c55e);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.chem-match-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chem-match-banner__label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--green, #22c55e);
+  margin: 0;
+}
+.chem-match-banner__name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+.chem-match-banner__catalog {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
 /* ===== HISTOLOGY STATUS BAR ===== */
 .status-template-name {
   font-size: 11px;
