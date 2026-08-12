@@ -218,6 +218,10 @@ function goHome() {
 
 function showScanScreen(pushHistory = true) {
   if (!state.sessionType) { showScreen('home', pushHistory); return; }
+  if (state.sessionType === 'histology' && (!state.currentStudy || !state.activeTemplate)) {
+    showScreen('histology-setup', pushHistory);
+    return;
+  }
   showScreen(SCAN_SCREENS[state.sessionType], pushHistory);
 }
 
@@ -662,15 +666,21 @@ async function initAntibodyScan() {
 
 // ===== HISTOLOGY SCAN =====
 async function initHistologyScan() {
+  // Guard: setup must be complete before the scanner runs
+  if (!state.currentStudy || !state.activeTemplate) {
+    showScreen('histology-setup', false);
+    return;
+  }
+
   const modeLabel = state.histologyMode === 'slides' ? 'Slides' : 'Blocks';
   const titleEl   = document.getElementById('histScanTitle');
   if (titleEl) titleEl.textContent = `Histology — ${modeLabel}`;
 
   const studyEl = document.getElementById('histStatusStudy');
-  if (studyEl) studyEl.textContent = state.currentStudy || 'No study set';
+  if (studyEl) studyEl.textContent = state.currentStudy;
 
   const tmplEl = document.getElementById('histStatusTemplate');
-  if (tmplEl) tmplEl.textContent = state.activeTemplate?.name || 'No template';
+  if (tmplEl) tmplEl.textContent = state.activeTemplate.name;
 
   document.getElementById('histTotal').textContent = `${state.totalScans} scans`;
   _checkScanCap();
@@ -1651,16 +1661,19 @@ function bindEvents() {
   document.getElementById('startHistologyBtn').addEventListener('click', () => startSession('histology'));
 
   // Histology setup
-  document.getElementById('histStudyIdInput').addEventListener('input', _validateHistologySetup);
-  document.getElementById('histTemplateSelect').addEventListener('change', _validateHistologySetup);
-  document.getElementById('continueHistologyBtn').addEventListener('click', continueToPreview);
-  document.getElementById('openTemplateLibraryBtn').addEventListener('click', () => {
+  document.getElementById('histStudyIdInput')?.addEventListener('input', _validateHistologySetup);
+  document.getElementById('histTemplateSelect')?.addEventListener('change', _validateHistologySetup);
+  document.getElementById('continueHistologyBtn')?.addEventListener('click', continueToPreview);
+  document.getElementById('openTemplateLibraryBtn')?.addEventListener('click', () => {
     showScreen('template-library');
   });
 
   // Session preview
-  document.getElementById('startHistScanBtn').addEventListener('click', () => showScreen('histology-scan'));
-  document.getElementById('changeHistSettingsBtn').addEventListener('click', goBack);
+  document.getElementById('startHistScanBtn')?.addEventListener('click', () => {
+    if (!state.currentStudy || !state.activeTemplate) { showScreen('histology-setup', false); return; }
+    showScreen('histology-scan');
+  });
+  document.getElementById('changeHistSettingsBtn')?.addEventListener('click', goBack);
 
   // Template library
   document.getElementById('newTemplateBtn').addEventListener('click', newTemplate);
