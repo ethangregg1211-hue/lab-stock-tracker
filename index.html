@@ -83,46 +83,54 @@
       </div>
     </div>
 
-    <!-- Settings bottom sheet -->
-    <div class="drawer hidden" id="settingsDrawer">
-      <div class="drawer__backdrop" id="settingsBackdrop"></div>
-      <div class="drawer__panel">
-        <h3 class="drawer__title">Settings</h3>
-        <label class="field-group">
-          <span class="field-label">Anthropic API Key</span>
-          <input type="password" id="apiKeyInput" class="input" placeholder="sk-ant-...">
-        </label>
-        <p class="field-label" style="margin-top:20px;margin-bottom:4px">Lab details for export</p>
-        <p class="muted-text" style="font-size:12px;margin-bottom:10px">These values are added to every chemical inventory export file.</p>
-        <label class="field-group">
-          <span class="field-label">PI Code</span>
-          <input type="text" id="chemPiCode" class="input" placeholder="e.g. SMIT001" autocomplete="off">
-        </label>
-        <label class="field-group">
-          <span class="field-label">PI Last Name</span>
-          <input type="text" id="chemPiLast" class="input" placeholder="" autocomplete="off">
-        </label>
-        <label class="field-group">
-          <span class="field-label">PI First Name</span>
-          <input type="text" id="chemPiFirst" class="input" placeholder="" autocomplete="off">
-        </label>
-        <label class="field-group">
-          <span class="field-label">Bldg Code</span>
-          <input type="text" id="chemBldg" class="input" placeholder="e.g. NSB" autocomplete="off">
-        </label>
-        <label class="field-group">
-          <span class="field-label">Default Lab</span>
-          <input type="text" id="chemLab" class="input" placeholder="e.g. 204" autocomplete="off">
-        </label>
-        <div class="btn-row">
-          <button class="btn btn--primary" id="saveApiKeyBtn">Save</button>
-          <button class="btn btn--ghost" id="closeSettingsBtn">Close</button>
-        </div>
+  </div>
+
+  <!-- ======== SETTINGS ======== -->
+  <div class="screen" id="screen-settings">
+    <header class="app-header">
+      <button class="icon-btn" onclick="goBack()" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Settings</h1>
+      <span class="icon-btn"></span>
+    </header>
+    <div class="screen-body">
+      <p class="settings-section-title">API Key</p>
+      <div class="api-key-row">
+        <input type="password" id="apiKeyInput" class="input" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+        <button class="icon-btn" id="apiKeyToggle" type="button" aria-label="Show/hide key">
+          <i class="ti ti-eye" id="apiKeyToggleIcon"></i>
+        </button>
       </div>
+      <p class="muted-text settings-helper">Get your key at console.anthropic.com</p>
+      <button class="btn btn--primary btn--full" id="saveApiKeyBtn">Save API key</button>
+
+      <div class="settings-divider"></div>
+
+      <p class="settings-section-title">Lab details for export</p>
+      <p class="muted-text settings-helper">These values are added to every chemical inventory export file.</p>
+      <label class="field-group">
+        <span class="field-label">PI Code</span>
+        <input type="text" id="chemPiCode" class="input" placeholder="e.g. SMIT001" autocomplete="off">
+      </label>
+      <label class="field-group">
+        <span class="field-label">PI Last Name</span>
+        <input type="text" id="chemPiLast" class="input" autocomplete="off">
+      </label>
+      <label class="field-group">
+        <span class="field-label">PI First Name</span>
+        <input type="text" id="chemPiFirst" class="input" autocomplete="off">
+      </label>
+      <label class="field-group">
+        <span class="field-label">Bldg Code</span>
+        <input type="text" id="chemBldg" class="input" placeholder="e.g. NSB" autocomplete="off">
+      </label>
+      <label class="field-group">
+        <span class="field-label">Default Lab</span>
+        <input type="text" id="chemLab" class="input" placeholder="e.g. 204" autocomplete="off">
+      </label>
+      <button class="btn btn--primary btn--full" id="saveLabDetailsBtn">Save lab details</button>
     </div>
   </div>
 
-  <!-- ======== COLUMN MAPPING ======== -->
   <!-- ======== BOX RESULT (shared antibody / chemical result) ======== -->
   <div class="screen" id="screen-box-result">
     <header class="app-header">
