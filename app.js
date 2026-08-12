@@ -1630,50 +1630,119 @@ async function _importChemicalsFromSheet() {
   showScreen('chemical-scan');
 }
 
-// ===== MOBILE-SAFE DOWNLOAD =====
+// ===== DOWNLOAD HELPERS =====
 let _lastExcelBlob = null;
-
-function downloadExcel(blob, filename) {
-  try {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch(e) {
-    // Fall back to navigating current tab — triggers iOS "Open in…" sheet
-    const reader = new FileReader();
-    reader.onload = function() {
-      window.location.href = reader.result;
-    };
-    reader.readAsDataURL(blob);
-  }
-}
-
-function _openExcelFallback() {
-  if (!_lastExcelBlob) return;
-  try {
-    const url = URL.createObjectURL(_lastExcelBlob);
-    const win = window.open(url, '_blank');
-    if (!win || win.closed || typeof win.closed === 'undefined') {
-      // Popup blocked — navigate via data URI instead
-      const reader = new FileReader();
-      reader.onload = () => { window.location.href = reader.result; };
-      reader.readAsDataURL(_lastExcelBlob);
-    }
-  } catch(e) {
-    const reader = new FileReader();
-    reader.onload = () => { window.location.href = reader.result; };
-    reader.readAsDataURL(_lastExcelBlob);
-  }
-}
+let _lastExcelFilename = '';
 
 function _wbToBlob(wb) {
   const arr = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
   return new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+function _buildDownloadBlob() {
+  if (!window.XLSX) return null;
+  const date = new Date().toISOString().slice(0, 10);
+  let wb, filename;
+  if (state.sessionType === 'chemical') {
+    const chemItems = state.items.filter(i =>
+      i.type === 'chemical' &&
+      !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? ''))
+    );
+    wb = exportChemicalTemplate(chemItems);
+    filename = `chemical-import-${date}.xlsx`;
+  } else {
+    wb = exportToExcel(state.items, state.sessionType);
+    filename = `labscan-${date}.xlsx`;
+  }
+  if (!wb) return null;
+  _lastExcelFilename = filename;
+  _lastExcelBlob = _wbToBlob(wb);
+  return _lastExcelBlob;
+}
+
+function _showDownloadActions() {
+  const el = document.getElementById('downloadActions');
+  if (el) el.classList.remove('hidden');
+}
+
+// Primary download — uses triggerDownload (from excel.js), falls back to data URI
+function _runDownload(blob, filename) {
+  try {
+    triggerDownload(blob, filename);
+    _showDownloadActions();
+  } catch(e) {
+    // triggerDownload unavailable — navigate via data URI (iOS "Open in…" sheet)
+    const reader = new FileReader();
+    reader.onload = () => { window.location.href = reader.result; };
+    reader.readAsDataURL(blob);
+    _showDownloadActions();
+  }
+}
+
+// "Can't download? Tap here to open file" handler
+function _openExcelFallback() {
+  const blob = _lastExcelBlob || _buildDownloadBlob();
+  if (!blob) return;
+  try {
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if (!win || win.closed || typeof win.closed === 'undefined') {
+      const reader = new FileReader();
+      reader.onload = () => { window.location.href = reader.result; };
+      reader.readAsDataURL(blob);
+    }
+  } catch(e) {
+    const reader = new FileReader();
+    reader.onload = () => { window.location.href = reader.result; };
+    reader.readAsDataURL(blob);
+  }
+}
+
+// "Email sheet to myself" — Web Share API with file (works on iOS), mailto fallback
+async function _emailSheet() {
+  const blob = _lastExcelBlob || _buildDownloadBlob();
+  if (!blob) return;
+  const filename = _lastExcelFilename || `labscan-${new Date().toISOString().slice(0,10)}.xlsx`;
+  const file = new File([blob], filename, { type: blob.type });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ title: 'Lab Sheet', files: [file] });
+      return;
+    } catch(e) {
+      if (e.name === 'AbortError') return;
+    }
+  }
+
+  // Fallback: mailto with plain-text summary in body (file attachment via mailto is not supported by browsers)
+  const lines = state.items
+    .filter(i => !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? '')))
+    .map(i => [i.fields?.chemical_description, i.fields?.catalog_number].filter(Boolean).join('\t'))
+    .filter(Boolean);
+  const body = `Lab inventory (${lines.length} items):\n\n${lines.join('\n')}`;
+  window.location.href = `mailto:?subject=${encodeURIComponent('Lab Sheet — ' + filename)}&body=${encodeURIComponent(body)}`;
+}
+
+// "Copy data as text" — copies chemical names + catalog numbers to clipboard
+function _copyDataAsText() {
+  const items = state.items.filter(i =>
+    !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? ''))
+  );
+  const lines = items.map(i => {
+    const name = i.fields?.chemical_description || '';
+    const cat  = i.fields?.catalog_number || '';
+    return [name, cat].filter(Boolean).join('\t');
+  }).filter(Boolean);
+
+  const text = lines.join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const el = document.getElementById('copySuccess');
+    if (el) { el.classList.remove('hidden'); setTimeout(() => el.classList.add('hidden'), 2500); }
+  }).catch(() => {
+    // Clipboard API blocked — show raw text fallback
+    const errEl = document.getElementById('downloadError');
+    if (errEl) { errEl.textContent = 'Copy failed — clipboard access denied.'; errEl.classList.remove('hidden'); }
+  });
 }
 
 // ===== LOADING =====
@@ -1947,37 +2016,21 @@ function bindEvents() {
   // Sheet view
   document.getElementById('sheetSearch').addEventListener('input', renderSheetView);
   document.getElementById('downloadBtn').addEventListener('click', () => {
-    const errEl  = document.getElementById('downloadError');
-    const openEl = document.getElementById('downloadOpenLink');
-    if (errEl)  { errEl.textContent = ''; errEl.classList.add('hidden'); }
-    if (openEl) openEl.classList.add('hidden');
-
-    if (state.reviewQueue.length) {
-      if (errEl) { errEl.textContent = 'Clear the review queue before downloading.'; errEl.classList.remove('hidden'); }
-      return;
-    }
+    const errEl = document.getElementById('downloadError');
+    if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
 
     if (!window.XLSX) {
       if (errEl) { errEl.textContent = 'Excel library not loaded.'; errEl.classList.remove('hidden'); }
       return;
     }
 
-    const date = new Date().toISOString().slice(0, 10);
-    let wb, filename;
-
-    if (state.sessionType === 'chemical') {
-      wb = exportChemicalTemplate(state.items.filter(i => i.type === 'chemical' && !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? ''))));
-      filename = `chemical-import-${date}.xlsx`;
-    } else {
-      wb = exportToExcel(state.items, state.sessionType);
-      filename = `labscan-${date}.xlsx`;
-    }
-
-    if (!wb) return;
-    _lastExcelBlob = _wbToBlob(wb);
-    downloadExcel(_lastExcelBlob, filename);
-    if (openEl) openEl.classList.remove('hidden');
+    const blob = _buildDownloadBlob();
+    if (!blob) return;
+    _runDownload(blob, _lastExcelFilename);
   });
+
+  document.getElementById('emailSheetBtn').addEventListener('click', _emailSheet);
+  document.getElementById('copyDataBtn').addEventListener('click', _copyDataAsText);
 
   // Camera controls
   document.getElementById('flashBtn').addEventListener('click', toggleTorch);

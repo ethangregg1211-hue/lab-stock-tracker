@@ -545,6 +545,11 @@
       </div>
       <p id="downloadError" class="download-error hidden"></p>
       <a id="downloadOpenLink" class="download-open-link hidden" href="#" onclick="event.preventDefault(); _openExcelFallback();">Can't download? Tap here to open file</a>
+      <div id="downloadActions" class="download-actions hidden">
+        <button class="btn btn--secondary btn--full" id="emailSheetBtn">Email sheet to myself</button>
+        <button class="btn btn--secondary btn--full" id="copyDataBtn">Copy data as text</button>
+        <span id="copySuccess" class="copy-success hidden">Copied to clipboard!</span>
+      </div>
     </div>
     <div class="sheet-table-scroll">
       <table class="sheet-table" id="sheetTable">

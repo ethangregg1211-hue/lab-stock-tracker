@@ -1,4 +1,4 @@
-const CACHE_NAME = 'labscan-v7';
+const CACHE_NAME = 'labscan-v8';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
