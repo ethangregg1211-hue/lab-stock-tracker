@@ -61,6 +61,19 @@ const SCAN_FIELD_OVERRIDES = {
   chemical: ['chemical_description','catalog_number','lot_number','vendor','physical_state','cas_num'],
 };
 
+// Internal field-name values that appear in row 2 of the university import template.
+// Any imported row whose chemical_description matches one of these is the header row
+// and must be filtered out of the display and export.
+const CHEM_INTERNAL_FIELD_NAMES = new Set([
+  'researcher','last_name','first_name','building','lab',
+  'storage_location','sub_storage_location','storage_requirements','storage_device',
+  'chemical_description','physical_state','receipt_quantity','unit','chemical_unit',
+  'cas_num','chemical_formula','molecular_weight','vendor','catalog_number','po_number',
+  'receipt_date','open_date','max_on_hand','expiration_date','contact','comments',
+  'date_entered','ship_code','last_updated','concentration',
+  'chemical_number','lot_number','multiple_cas','msds_url','order_date','will_expire',
+]);
+
 
 const TISSUE_PRESETS = [
   'tumor','mammary gland','cancer','GU','MG','RMG','LMG',
@@ -1538,15 +1551,27 @@ function renderSheetView() {
     : (FIELDS[state.sessionType] || []);
 
   const search  = (document.getElementById('sheetSearch')?.value || '').toLowerCase();
+
+  // Exclude internal field-name rows (row 2 of the university template)
+  const displayable = state.items.filter(i => {
+    const chemName = String(i.fields?.chemical_description ?? '');
+    return !CHEM_INTERNAL_FIELD_NAMES.has(chemName);
+  });
+
   const visible = search
-    ? state.items.filter(i => Object.values(i.fields || {}).some(v => String(v).toLowerCase().includes(search)))
-    : state.items;
+    ? displayable.filter(i => Object.values(i.fields || {}).some(v => String(v).toLowerCase().includes(search)))
+    : displayable;
 
   document.getElementById('sheetHead').innerHTML =
     `<tr>${allDefs.map(f => `<th>${esc(f.label)}</th>`).join('')}</tr>`;
 
   document.getElementById('sheetBody').innerHTML = visible.map(item => {
-    const cls   = item.status === 'corrected' ? 'row--corrected' : 'row--auto';
+    // Imported items (from original sheet) get no highlight regardless of confirm state.
+    // New items scanned this session: orange if manually corrected, yellow otherwise.
+    let cls = '';
+    if (item.status !== 'imported') {
+      cls = item.status === 'corrected' ? 'row--corrected' : 'row--auto';
+    }
     const cells = allDefs.map(f => `<td title="${esc(item.fields?.[f.key]||'')}">${esc(item.fields?.[f.key]||'')}</td>`).join('');
     return `<tr class="${cls}">${cells}</tr>`;
   }).join('');
@@ -1594,6 +1619,8 @@ async function _importChemicalsFromSheet() {
         fields[key] = String(row[parseInt(col)] ?? '').trim();
       });
       if (!fields.chemical_description) return Promise.resolve();
+      // Skip the internal field-names row (row 2 of the university template)
+      if (CHEM_INTERNAL_FIELD_NAMES.has(fields.chemical_description)) return Promise.resolve();
       const item = { type: 'chemical', sessionId: state.sessionId, fields, status: 'imported' };
       return addItemToDB(item).then(id => { item.id = id; state.items.push(item); });
     }));
@@ -1628,8 +1655,20 @@ function downloadExcel(blob, filename) {
 
 function _openExcelFallback() {
   if (!_lastExcelBlob) return;
-  const url = URL.createObjectURL(_lastExcelBlob);
-  window.open(url, '_blank');
+  try {
+    const url = URL.createObjectURL(_lastExcelBlob);
+    const win = window.open(url, '_blank');
+    if (!win || win.closed || typeof win.closed === 'undefined') {
+      // Popup blocked — navigate via data URI instead
+      const reader = new FileReader();
+      reader.onload = () => { window.location.href = reader.result; };
+      reader.readAsDataURL(_lastExcelBlob);
+    }
+  } catch(e) {
+    const reader = new FileReader();
+    reader.onload = () => { window.location.href = reader.result; };
+    reader.readAsDataURL(_lastExcelBlob);
+  }
 }
 
 function _wbToBlob(wb) {
@@ -1927,12 +1966,7 @@ function bindEvents() {
     let wb, filename;
 
     if (state.sessionType === 'chemical') {
-      const unreconciled = state.items.filter(i => i.type === 'chemical' && !i.presentConfirmed).length;
-      if (unreconciled && errEl) {
-        errEl.textContent = `${unreconciled} chemical${unreconciled !== 1 ? 's' : ''} haven't been reconciled — exporting anyway.`;
-        errEl.classList.remove('hidden');
-      }
-      wb = exportChemicalTemplate(state.items.filter(i => i.type === 'chemical'));
+      wb = exportChemicalTemplate(state.items.filter(i => i.type === 'chemical' && !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? ''))));
       filename = `chemical-import-${date}.xlsx`;
     } else {
       wb = exportToExcel(state.items, state.sessionType);
