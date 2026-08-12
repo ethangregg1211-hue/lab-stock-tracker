@@ -61,6 +61,15 @@ const SCAN_FIELD_OVERRIDES = {
   chemical: ['chemical_description','catalog_number','lot_number','vendor','physical_state','cas_num'],
 };
 
+// Fields imported from the chemical inventory Excel sheet (subset used for matching)
+const CHEMICAL_IMPORT_FIELDS = [
+  { key: 'chemical_description', label: 'Chemical Name' },
+  { key: 'catalog_number',       label: 'Catalog Number' },
+  { key: 'cas_num',              label: 'CAS Number' },
+  { key: 'vendor',               label: 'Vendor' },
+  { key: 'physical_state',       label: 'Physical State' },
+];
+
 const TISSUE_PRESETS = [
   'tumor','mammary gland','cancer','GU','MG','RMG','LMG',
   'bone','bones','tibia','femur','leg','legs','muscle',
@@ -304,7 +313,11 @@ function startSession(type) {
   if (type === 'histology') {
     showScreen('histology-setup');
   } else if (type === 'chemical') {
-    showScreen('chemical-setup');
+    if (state.uploadedRows.length > 0) {
+      _tryAutoMapChemicals();
+    } else {
+      showScreen('chemical-setup');
+    }
   } else {
     showScreen(SCAN_SCREENS[type]);
   }
@@ -1571,15 +1584,22 @@ function renderSheetView() {
 }
 
 // ===== COLUMN MAPPING =====
-function buildMappingTable(headers, sessionType) {
-  const fields = FIELDS[sessionType] || [];
+function buildMappingTable(headers) {
+  // Deduplicate headers (case-insensitive) — keep first occurrence
+  const seen = new Set();
+  const unique = [];
+  headers.forEach((h, i) => {
+    const key = h.toLowerCase().trim();
+    if (!seen.has(key)) { seen.add(key); unique.push({ h, i }); }
+  });
 
-  document.getElementById('mappingTableBody').innerHTML = headers.map((h, i) => {
-    const guess = guessFieldFromHeader(h, sessionType);
+  document.getElementById('mappingTableBody').innerHTML = unique.map(({ h, i }) => {
+    const rawGuess = guessFieldFromHeader(h, 'chemical');
+    const guess    = CHEMICAL_IMPORT_FIELDS.some(f => f.key === rawGuess) ? rawGuess : '';
     return `<tr>
       <td>${esc(h)}</td>
       <td><select class="input map-select" data-col="${i}" style="min-height:36px;padding:4px 8px;font-size:.82rem">
-        ${fields.map(f => `<option value="${f.key}" ${f.key===guess?'selected':''}>${esc(f.label)}</option>`).join('')}
+        ${CHEMICAL_IMPORT_FIELDS.map(f => `<option value="${f.key}" ${f.key===guess?'selected':''}>${esc(f.label)}</option>`).join('')}
         <option value="" ${!guess?'selected':''}>Skip</option>
       </select></td>
       <td class="match-icon ${guess ? 'match-icon--ok' : 'match-icon--warn'}">
@@ -1607,26 +1627,48 @@ function buildPreviewTable(headers, rows) {
 }
 
 function importMappedData() {
-  const sessionType = document.getElementById('mappingSessionType').value;
-  if (!sessionType) { alert('Select a session type first.'); return; }
-
   const mapping = {};
   document.querySelectorAll('.map-select').forEach(sel => {
     if (sel.value) mapping[parseInt(sel.dataset.col)] = sel.value;
   });
 
-  state.sessionType = sessionType;
-  state.sessionId   = state.sessionId || Date.now().toString();
-
-  Promise.all(state.uploadedRows.map(row => {
-    const fields = {};
-    Object.entries(mapping).forEach(([col, key]) => { fields[key] = String(row[col] ?? '').trim(); });
-    const item = { type: sessionType, sessionId: state.sessionId, fields, status: 'auto' };
-    return addItemToDB(item).then(id => { item.id = id; state.items.push(item); state.totalScans++; });
-  })).then(() => {
+  _importChemicalRows(mapping).then(() => {
     persistSession();
-    showScreen(SCAN_SCREENS[sessionType] || 'home');
+    showScreen('chemical-setup');
   });
+}
+
+async function _importChemicalRows(mapping) {
+  await Promise.all(state.uploadedRows.map(row => {
+    const fields = {};
+    Object.entries(mapping).forEach(([col, key]) => {
+      fields[key] = String(row[parseInt(col)] ?? '').trim();
+    });
+    if (!fields.chemical_description) return Promise.resolve();
+    const item = { type: 'chemical', sessionId: state.sessionId, fields, status: 'imported' };
+    return addItemToDB(item).then(id => { item.id = id; state.items.push(item); });
+  }));
+}
+
+async function _tryAutoMapChemicals() {
+  const mapping  = {};
+  let   allFound = true;
+
+  CHEMICAL_IMPORT_FIELDS.forEach(f => {
+    const idx = state.uploadedHeaders.findIndex(h => guessFieldFromHeader(h, 'chemical') === f.key);
+    if (idx !== -1) mapping[idx] = f.key;
+    else allFound = false;
+  });
+
+  if (allFound) {
+    await _importChemicalRows(mapping);
+    showScreen('chemical-setup');
+  } else {
+    document.getElementById('uploadedFileName').textContent = state.uploadedFileName || '';
+    buildMappingTable(state.uploadedHeaders);
+    buildPreviewTable(state.uploadedHeaders, state.uploadedRows);
+    showScreen('column-mapping');
+  }
 }
 
 // ===== LOADING =====
@@ -1740,25 +1782,13 @@ function bindEvents() {
       state.uploadedRows     = rows;
       state.uploadedFileName = file.name;
       updateHomeUploadCard();
-      document.getElementById('uploadedFileName').textContent   = file.name;
-      document.getElementById('mappingTableBody').innerHTML     = '';
-      document.getElementById('previewTableWrapper').innerHTML  = '';
-      document.getElementById('mappingSessionType').value       = '';
-      showScreen('column-mapping');
     } catch (err) {
       hideLoading();
       alert('Could not read file: ' + err.message);
     }
   });
 
-  // Column mapping
-  document.getElementById('mappingSessionType').addEventListener('change', e => {
-    const type = e.target.value;
-    if (type && state.uploadedHeaders.length) {
-      buildMappingTable(state.uploadedHeaders, type);
-      buildPreviewTable(state.uploadedHeaders, state.uploadedRows);
-    }
-  });
+  // Column mapping (chemical-only)
   document.getElementById('confirmMappingBtn').addEventListener('click', importMappedData);
 
   // Box result (shared antibody result screen)

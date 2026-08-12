@@ -130,16 +130,7 @@
     </header>
     <div class="screen-body">
       <div class="file-chip" id="uploadedFileName"></div>
-      <label class="field-group">
-        <span class="field-label">Session type</span>
-        <select id="mappingSessionType" class="input">
-          <option value="">Select type...</option>
-          <option value="antibody">Antibody stocks</option>
-          <option value="histology">Histology</option>
-          <option value="chemical">Chemical inventory</option>
-        </select>
-      </label>
-      <p class="muted-text">Review how Excel columns map to fields. Adjust dropdowns if needed.</p>
+      <p class="muted-text">Match each Excel column to a chemical field. Columns that could not be detected automatically are marked with a warning.</p>
       <div class="table-scroll">
         <table class="map-table">
           <thead>
@@ -150,7 +141,7 @@
       </div>
       <h3 class="section-heading">Preview (first 3 rows)</h3>
       <div class="table-scroll" id="previewTableWrapper"></div>
-      <button class="btn btn--primary btn--full" id="confirmMappingBtn">Import data</button>
+      <button class="btn btn--primary btn--full" id="confirmMappingBtn">Import chemicals</button>
     </div>
   </div>
 
