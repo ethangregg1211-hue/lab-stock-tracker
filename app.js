@@ -1640,7 +1640,9 @@ function bindEvents() {
     document.getElementById('chemPiFirst').value  = localStorage.getItem('chem_pi_first') || '';
     document.getElementById('chemBldg').value     = localStorage.getItem('chem_bldg')     || '';
     document.getElementById('chemLab').value      = localStorage.getItem('chem_lab')      || '';
-    document.getElementById('settingsDrawer').classList.remove('hidden');
+    const drawer = document.getElementById('settingsDrawer');
+    drawer.classList.remove('hidden');
+    drawer.querySelector('.drawer__panel').scrollTop = 0;
   });
   ['settingsBackdrop','closeSettingsBtn'].forEach(id =>
     document.getElementById(id).addEventListener('click', () =>
