@@ -66,18 +66,11 @@
             <span class="session-card__desc">Track vials, lot numbers, and expiry dates</span>
           </div>
         </button>
-        <button class="session-card" id="startTissueBtn" disabled>
-          <i class="ti ti-cube session-card__icon"></i>
-          <div class="session-card__content">
-            <span class="session-card__name">Tissue blocks</span>
-            <span class="session-card__desc">Scan wax block and cassette labels</span>
-          </div>
-        </button>
         <button class="session-card" id="startHistologyBtn" disabled>
           <i class="ti ti-microscope session-card__icon"></i>
           <div class="session-card__content">
-            <span class="session-card__name">Histology slides</span>
-            <span class="session-card__desc">Record slides, stains, and accession numbers</span>
+            <span class="session-card__name">Histology</span>
+            <span class="session-card__desc">Slides and tissue blocks</span>
           </div>
         </button>
         <button class="session-card" id="startChemicalBtn" disabled>
@@ -133,6 +126,7 @@
     <header class="app-header">
       <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Map columns</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="screen-body">
       <div class="file-chip" id="uploadedFileName"></div>
@@ -141,8 +135,7 @@
         <select id="mappingSessionType" class="input">
           <option value="">Select type...</option>
           <option value="antibody">Antibody stocks</option>
-          <option value="tissue">Tissue blocks</option>
-          <option value="histology">Histology slides</option>
+          <option value="histology">Histology</option>
           <option value="chemical">Chemical inventory</option>
         </select>
       </label>
@@ -161,11 +154,12 @@
     </div>
   </div>
 
-  <!-- ======== BOX RESULT ======== -->
+  <!-- ======== BOX RESULT (shared antibody / chemical result) ======== -->
   <div class="screen" id="screen-box-result">
     <header class="app-header">
       <button class="icon-btn" id="boxResultBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Scan result</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="screen-body">
       <div id="boxResultCard" class="result-card"></div>
@@ -181,6 +175,7 @@
     <header class="app-header">
       <button class="icon-btn" id="abScanBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Antibody stocks</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="status-bar">
       <span id="abTotal">0 scans</span>
@@ -205,24 +200,145 @@
     </nav>
   </div>
 
-  <!-- ======== STUDY SETUP ======== -->
-  <div class="screen" id="screen-study-setup">
+  <!-- ======== HISTOLOGY SETUP ======== -->
+  <div class="screen" id="screen-histology-setup">
     <header class="app-header">
       <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
-      <h1 class="app-title">Study name</h1>
+      <h1 class="app-title">Histology setup</h1>
     </header>
     <div class="screen-body">
       <label class="field-group">
-        <span class="field-label">Which study are you scanning today?</span>
-        <input type="text" id="studyNameInput" class="input" placeholder="e.g. Study 42" autocomplete="off">
+        <span class="field-label">Study ID <span style="color:var(--red)">*</span></span>
+        <input type="text" id="histStudyIdInput" class="input" placeholder="e.g. Study-42" autocomplete="off">
       </label>
-      <div id="recentStudiesSection" class="recent-studies hidden">
-        <p class="field-label" style="margin-bottom:8px">Recent studies</p>
-        <div id="recentStudiesChips" class="recent-chips"></div>
+      <div id="recentStudyIdsSection" class="recent-studies hidden">
+        <p class="field-label" style="margin-bottom:8px">Recent study IDs</p>
+        <div id="recentStudyIdChips" class="recent-chips"></div>
       </div>
+      <label class="field-group">
+        <span class="field-label">Template <span style="color:var(--red)">*</span></span>
+        <select id="histTemplateSelect" class="input">
+          <option value="">Select a template...</option>
+        </select>
+      </label>
+      <button class="btn btn--ghost btn--full" id="openTemplateLibraryBtn" style="font-size:13px;min-height:40px">
+        <i class="ti ti-layout-grid" style="margin-right:6px"></i>Manage templates
+      </button>
+      <label class="field-group">
+        <span class="field-label">Type</span>
+        <select id="histModeSelect" class="input">
+          <option value="slides">Slides</option>
+          <option value="blocks">Blocks</option>
+        </select>
+      </label>
     </div>
     <div class="actions-sticky">
-      <button class="btn btn--primary btn--full" id="startStudyScanBtn" disabled>Start scanning</button>
+      <button class="btn btn--primary btn--full" id="continueHistologyBtn" disabled>Continue</button>
+    </div>
+  </div>
+
+  <!-- ======== SESSION PREVIEW ======== -->
+  <div class="screen" id="screen-session-preview">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Session preview</h1>
+    </header>
+    <div class="screen-body">
+      <div class="study-banner">
+        <i class="ti ti-lock study-banner__icon"></i>
+        <div>
+          <p class="study-banner__label">Study ID — locked for this session</p>
+          <p class="study-banner__value" id="previewStudyId"></p>
+        </div>
+      </div>
+      <div class="preview-meta">
+        <div class="preview-meta__row">
+          <span class="preview-meta__key">Template</span>
+          <span class="preview-meta__val" id="previewTemplateName"></span>
+        </div>
+        <div class="preview-meta__row">
+          <span class="preview-meta__key">Type</span>
+          <span class="preview-meta__val" id="previewMode"></span>
+        </div>
+      </div>
+      <div id="previewTemplateViz" class="template-viz"></div>
+    </div>
+    <div class="actions-sticky">
+      <button class="btn btn--primary btn--full" id="startHistScanBtn">Start scanning</button>
+      <button class="btn btn--ghost btn--full" id="changeHistSettingsBtn">Change settings</button>
+    </div>
+  </div>
+
+  <!-- ======== TEMPLATE LIBRARY ======== -->
+  <div class="screen" id="screen-template-library">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Templates</h1>
+      <button class="icon-btn" id="newTemplateBtn" aria-label="New template" title="New template"><i class="ti ti-plus"></i></button>
+    </header>
+    <div class="screen-body" style="padding:0">
+      <ul class="template-library-list" id="templateLibraryList"></ul>
+    </div>
+  </div>
+
+  <!-- ======== TEMPLATE DESIGNER ======== -->
+  <div class="screen" id="screen-template-designer">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <input type="text" id="templateNameInput" class="template-name-input" placeholder="Template name...">
+      <button class="btn btn--sm btn--primary" id="saveTemplateBtn">Save</button>
+    </header>
+    <div class="screen-body">
+      <p class="designer-note"><i class="ti ti-info-circle"></i> Study ID is entered before scanning — it is not placed in the template.</p>
+
+      <!-- Standard field palette -->
+      <div class="palette-section">
+        <p class="palette-section__title">Standard fields</p>
+        <div class="palette-row" id="standardPalette"></div>
+      </div>
+
+      <!-- Custom fields -->
+      <div class="palette-section">
+        <p class="palette-section__title">Custom fields</p>
+        <div class="palette-row" id="customPalette"></div>
+        <div class="custom-field-add">
+          <input type="text" id="customFieldInput" class="input" placeholder="Field name..." style="min-height:38px;font-size:14px">
+          <button class="btn btn--outline btn--sm" id="addCustomFieldBtn">Add</button>
+        </div>
+      </div>
+
+      <!-- Slide outline -->
+      <div class="slide-outline">
+        <p class="slide-outline__label">Slide layout — tap a field, then tap a zone to place it</p>
+        <div class="slide-outline__body">
+          <!-- Row 0: Top -->
+          <div class="slide-row-group">
+            <div class="slide-row-header">
+              <span class="slide-row-header__name">Top</span>
+              <span class="slide-row-header__count" id="designerRowCount0"></span>
+            </div>
+            <div class="slide-zones" id="designerRowZones0"></div>
+          </div>
+          <!-- Row 1: Middle -->
+          <div class="slide-row-group">
+            <div class="slide-row-header">
+              <span class="slide-row-header__name">Middle</span>
+              <span class="slide-row-header__count" id="designerRowCount1"></span>
+            </div>
+            <div class="slide-zones" id="designerRowZones1"></div>
+          </div>
+          <!-- Row 2: Bottom -->
+          <div class="slide-row-group">
+            <div class="slide-row-header">
+              <span class="slide-row-header__name">Bottom</span>
+              <span class="slide-row-header__count" id="designerRowCount2"></span>
+            </div>
+            <div class="slide-zones" id="designerRowZones2"></div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn--ghost btn--full" id="deleteTemplateBtn" style="color:var(--red);border-color:var(--red-border)">Delete template</button>
     </div>
   </div>
 
@@ -253,6 +369,7 @@
     <header class="app-header">
       <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Duplicate detected</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="screen-body">
       <p class="conflict-desc">Same catalog # and lot # found in existing records.</p>
@@ -279,9 +396,12 @@
   <div class="screen" id="screen-histology-scan">
     <header class="app-header">
       <button class="icon-btn" id="histScanBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
-      <h1 class="app-title">Histology slides</h1>
+      <h1 class="app-title" id="histScanTitle">Histology</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="status-bar">
+      <span><i class="ti ti-lock" style="font-size:11px;color:var(--accent)"></i> <span id="histStatusStudy"></span></span>
+      <span id="histStatusTemplate" class="status-template-name"></span>
       <span id="histTotal">0 scans</span>
     </div>
     <div class="camera-slot" id="histCameraSlot"></div>
@@ -309,6 +429,7 @@
     <header class="app-header">
       <button class="icon-btn" id="histResultBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Scan result</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="screen-body">
       <div id="histResultCard" class="result-card"></div>
@@ -324,6 +445,7 @@
     <header class="app-header">
       <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Manual entry</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="screen-body">
       <p class="muted-text" id="manualReason">Camera unavailable - enter details manually.</p>
@@ -337,6 +459,7 @@
     <header class="app-header">
       <button class="icon-btn" id="chemScanBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Chemical inventory</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="status-bar">
       <span id="chemTotal">0 scans</span>
@@ -368,6 +491,7 @@
     <header class="app-header">
       <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">New chemical</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="screen-body">
       <p class="field-label" style="margin-bottom:8px">Read from label</p>
@@ -408,6 +532,7 @@
       <button class="icon-btn" id="reviewBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Review queue</h1>
       <span class="badge badge--count" id="reviewQueueBadge">0</span>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="screen-body">
       <ul class="review-list" id="reviewList"></ul>
@@ -462,6 +587,7 @@
       <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Sheet</h1>
       <button class="btn btn--sm" id="downloadBtn">Download</button>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="sheet-toolbar">
       <input type="text" id="sheetSearch" class="input input--search" placeholder="Search...">
@@ -488,6 +614,7 @@
     <header class="app-header">
       <button class="icon-btn" id="abMidpointBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
       <h1 class="app-title">Flip the vial</h1>
+      <button class="icon-btn" onclick="goHome()" aria-label="Home"><i class="ti ti-home"></i></button>
     </header>
     <div class="screen-body">
       <p class="muted-text">Rotate the vial and scan the other side to capture any missing fields.</p>
@@ -496,50 +623,6 @@
     <div class="actions-sticky">
       <button class="btn btn--primary btn--full" id="abScanOtherSideBtn">Scan other side</button>
       <button class="btn btn--ghost btn--full" id="abUseFirstScanBtn">Use this scan only</button>
-    </div>
-  </div>
-
-  <!-- ======== TISSUE SCAN ======== -->
-  <div class="screen" id="screen-tissue-scan">
-    <header class="app-header">
-      <button class="icon-btn" id="tissueScanBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
-      <h1 class="app-title">Tissue blocks</h1>
-    </header>
-    <div class="status-bar">
-      <span id="tissueTotal">0 scans</span>
-    </div>
-    <div class="camera-slot" id="tissueCameraSlot"></div>
-    <div class="undo-strip-wrap">
-      <div class="undo-strip" id="tissueUndoStrip"></div>
-    </div>
-    <div class="last-scanned-section">
-      <p class="last-scanned__title">Last scanned</p>
-      <ul class="last-scanned__list" id="tissueLastScannedList"></ul>
-    </div>
-    <div class="scan-footer">
-      <p class="camera-note">For permanent camera access, add this app to your home screen via Safari.</p>
-      <button class="scan-type-link" id="tissueTypeBtn">Can't scan? Type it in</button>
-      <button class="shutter-btn" id="tissueReadBtn"><i class="ti ti-camera"></i> Read label</button>
-    </div>
-    <nav class="nav-bar">
-      <button class="nav-btn nav-btn--active" onclick="showScanScreen(false)">Scanner</button>
-      <button class="nav-btn" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge6">0</span></button>
-      <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
-    </nav>
-  </div>
-
-  <!-- ======== TISSUE RESULT ======== -->
-  <div class="screen" id="screen-tissue-result">
-    <header class="app-header">
-      <button class="icon-btn" id="tissueResultBackBtn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
-      <h1 class="app-title">Scan result</h1>
-    </header>
-    <div class="screen-body">
-      <div id="tissueResultCard" class="result-card"></div>
-    </div>
-    <div class="actions-sticky">
-      <button class="btn btn--primary btn--full" id="tissueConfirmBtn">Confirm and add</button>
-      <button class="btn btn--ghost btn--full" id="tissueReviewLaterBtn">Review later</button>
     </div>
   </div>
 
