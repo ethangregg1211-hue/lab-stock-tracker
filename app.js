@@ -61,14 +61,6 @@ const SCAN_FIELD_OVERRIDES = {
   chemical: ['chemical_description','catalog_number','lot_number','vendor','physical_state','cas_num'],
 };
 
-// Fields imported from the chemical inventory Excel sheet (subset used for matching)
-const CHEMICAL_IMPORT_FIELDS = [
-  { key: 'chemical_description', label: 'Chemical Name' },
-  { key: 'catalog_number',       label: 'Catalog Number' },
-  { key: 'cas_num',              label: 'CAS Number' },
-  { key: 'vendor',               label: 'Vendor' },
-  { key: 'physical_state',       label: 'Physical State' },
-];
 
 const TISSUE_PRESETS = [
   'tumor','mammary gland','cancer','GU','MG','RMG','LMG',
@@ -311,7 +303,7 @@ function startSession(type) {
     showScreen('histology-setup');
   } else if (type === 'chemical') {
     if (state.uploadedRows.length > 0) {
-      _tryAutoMapChemicals();
+      _importChemicalsFromSheet();
     } else {
       showScreen('chemical-scan');
     }
@@ -1565,91 +1557,50 @@ function renderSheetView() {
 }
 
 // ===== COLUMN MAPPING =====
-function buildMappingTable(headers) {
-  // Deduplicate headers (case-insensitive) — keep first occurrence
-  const seen = new Set();
-  const unique = [];
-  headers.forEach((h, i) => {
-    const key = h.toLowerCase().trim();
-    if (!seen.has(key)) { seen.add(key); unique.push({ h, i }); }
+async function _importChemicalsFromSheet() {
+  const headers = state.uploadedHeaders;
+  const rows    = state.uploadedRows;
+
+  // Chemical Name: header must contain both "chemical" and "name"
+  const nameIdx = headers.findIndex(h => {
+    const l = h.toLowerCase();
+    return l.includes('chemical') && l.includes('name');
   });
 
-  document.getElementById('mappingTableBody').innerHTML = unique.map(({ h, i }) => {
-    const rawGuess = guessFieldFromHeader(h, 'chemical');
-    const guess    = CHEMICAL_IMPORT_FIELDS.some(f => f.key === rawGuess) ? rawGuess : '';
-    return `<tr>
-      <td>${esc(h)}</td>
-      <td><select class="input map-select" data-col="${i}" style="min-height:36px;padding:4px 8px;font-size:.82rem">
-        ${CHEMICAL_IMPORT_FIELDS.map(f => `<option value="${f.key}" ${f.key===guess?'selected':''}>${esc(f.label)}</option>`).join('')}
-        <option value="" ${!guess?'selected':''}>Skip</option>
-      </select></td>
-      <td class="match-icon ${guess ? 'match-icon--ok' : 'match-icon--warn'}">
-        <i class="ti ${guess ? 'ti-check' : 'ti-alert-triangle'}"></i>
-      </td>
-    </tr>`;
-  }).join('');
+  // Catalog #: header contains "catalog" or "cat"
+  const catIdx = headers.findIndex(h => {
+    const l = h.toLowerCase();
+    return l.includes('catalog') || l.includes('cat');
+  });
 
-  document.querySelectorAll('.map-select').forEach(sel =>
-    sel.addEventListener('change', () => {
-      const cell = sel.closest('tr').querySelector('.match-icon');
-      cell.className = `match-icon ${sel.value ? 'match-icon--ok' : 'match-icon--warn'}`;
-      cell.innerHTML = `<i class="ti ${sel.value ? 'ti-check' : 'ti-alert-triangle'}"></i>`;
-    })
-  );
-}
+  // Best-effort extras — not required
+  const lotIdx    = headers.findIndex(h => /lot/i.test(h));
+  const vendorIdx = headers.findIndex(h => /vendor|supplier/i.test(h));
+  const casIdx    = headers.findIndex(h => /\bcas\b/i.test(h));
+  const physIdx   = headers.findIndex(h => /physical.?state/i.test(h));
 
-function buildPreviewTable(headers, rows) {
-  const preview = rows.slice(0, 3);
-  document.getElementById('previewTableWrapper').innerHTML =
-    `<table class="map-table">
-      <thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-      <tbody>${preview.map(row => `<tr>${headers.map((_,i) => `<td>${esc(String(row[i]??''))}</td>`).join('')}</tr>`).join('')}</tbody>
-    </table>`;
-}
-
-function importMappedData() {
   const mapping = {};
-  document.querySelectorAll('.map-select').forEach(sel => {
-    if (sel.value) mapping[parseInt(sel.dataset.col)] = sel.value;
-  });
+  if (nameIdx   !== -1) mapping[nameIdx]   = 'chemical_description';
+  if (catIdx    !== -1) mapping[catIdx]    = 'catalog_number';
+  if (lotIdx    !== -1) mapping[lotIdx]    = 'lot_number';
+  if (vendorIdx !== -1) mapping[vendorIdx] = 'vendor';
+  if (casIdx    !== -1) mapping[casIdx]    = 'cas_num';
+  if (physIdx   !== -1) mapping[physIdx]   = 'physical_state';
 
-  _importChemicalRows(mapping).then(() => {
-    persistSession();
-    showScreen('chemical-scan');
-  });
-}
-
-async function _importChemicalRows(mapping) {
-  await Promise.all(state.uploadedRows.map(row => {
-    const fields = {};
-    Object.entries(mapping).forEach(([col, key]) => {
-      fields[key] = String(row[parseInt(col)] ?? '').trim();
-    });
-    if (!fields.chemical_description) return Promise.resolve();
-    const item = { type: 'chemical', sessionId: state.sessionId, fields, status: 'imported' };
-    return addItemToDB(item).then(id => { item.id = id; state.items.push(item); });
-  }));
-}
-
-async function _tryAutoMapChemicals() {
-  const mapping  = {};
-  let   allFound = true;
-
-  CHEMICAL_IMPORT_FIELDS.forEach(f => {
-    const idx = state.uploadedHeaders.findIndex(h => guessFieldFromHeader(h, 'chemical') === f.key);
-    if (idx !== -1) mapping[idx] = f.key;
-    else allFound = false;
-  });
-
-  if (allFound) {
-    await _importChemicalRows(mapping);
-    showScreen('chemical-scan');
-  } else {
-    document.getElementById('uploadedFileName').textContent = state.uploadedFileName || '';
-    buildMappingTable(state.uploadedHeaders);
-    buildPreviewTable(state.uploadedHeaders, state.uploadedRows);
-    showScreen('column-mapping');
+  if (nameIdx !== -1 && rows.length > 0) {
+    await Promise.all(rows.map(row => {
+      const fields = {};
+      Object.entries(mapping).forEach(([col, key]) => {
+        fields[key] = String(row[parseInt(col)] ?? '').trim();
+      });
+      if (!fields.chemical_description) return Promise.resolve();
+      const item = { type: 'chemical', sessionId: state.sessionId, fields, status: 'imported' };
+      return addItemToDB(item).then(id => { item.id = id; state.items.push(item); });
+    }));
+    await persistSession();
   }
+
+  showScreen('chemical-scan');
 }
 
 // ===== LOADING =====
@@ -1768,9 +1719,6 @@ function bindEvents() {
       alert('Could not read file: ' + err.message);
     }
   });
-
-  // Column mapping (chemical-only)
-  document.getElementById('confirmMappingBtn').addEventListener('click', importMappedData);
 
   // Box result (shared antibody result screen)
   document.getElementById('boxResultBackBtn').addEventListener('click', goBack);

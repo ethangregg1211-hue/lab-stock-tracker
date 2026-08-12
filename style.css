@@ -682,13 +682,6 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
   align-self: flex-start;
 }
 .table-scroll { overflow-x: auto; }
-.map-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.map-table th { padding: 8px 10px; text-align: left; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); border-bottom: 0.5px solid var(--border); white-space: nowrap; }
-.map-table td { padding: 8px 10px; border-bottom: 0.5px solid var(--border); }
-.map-table select { min-height: 36px; padding: 4px 8px; font-size: 13px; }
-.match-icon { font-size: 14px; color: var(--text-muted); }
-.match-icon--ok { color: var(--green); }
-.match-icon--warn { color: var(--amber); }
 
 /* ===== CONFLICT SCREEN ===== */
 .conflict-desc { font-size: 14px; color: var(--text-muted); }
