@@ -1,5 +1,7 @@
 function getApiKey() {
-  return localStorage.getItem('anthropic_api_key') || '';
+  return (window.LABSCAN_CONFIG && window.LABSCAN_CONFIG.apiKey)
+    || localStorage.getItem('anthropic_api_key')
+    || '';
 }
 
 const SHARED_RULES = `
