@@ -229,7 +229,6 @@ function showScanScreen(pushHistory = true) {
 function _onEnter(id) {
   const inits = {
     'home':                  initHome,
-    'settings':              initSettings,
     'histology-setup':       initHistologySetup,
     'session-preview':       initSessionPreview,
     'template-library':      initTemplateLibrary,
@@ -243,20 +242,6 @@ function _onEnter(id) {
     'sheet-view':            renderSheetView,
   };
   if (inits[id]) inits[id]();
-}
-
-// ===== SETTINGS =====
-function initSettings() {
-  const input = document.getElementById('apiKeyInput');
-  const icon  = document.getElementById('apiKeyToggleIcon');
-  input.value = getApiKey();
-  input.type  = 'password';
-  if (icon) icon.className = 'ti ti-eye';
-  document.getElementById('chemPiCode').value  = localStorage.getItem('chem_pi_code')  || '';
-  document.getElementById('chemPiLast').value  = localStorage.getItem('chem_pi_last')  || '';
-  document.getElementById('chemPiFirst').value = localStorage.getItem('chem_pi_first') || '';
-  document.getElementById('chemBldg').value    = localStorage.getItem('chem_bldg')     || '';
-  document.getElementById('chemLab').value     = localStorage.getItem('chem_lab')      || '';
 }
 
 // ===== HOME =====
@@ -1647,33 +1632,38 @@ function bindEvents() {
     }
   });
 
-  // Settings screen
-  document.getElementById('settingsBtn').addEventListener('click', () => showScreen('settings'));
-  document.getElementById('apiKeyToggle').addEventListener('click', () => {
-    const input = document.getElementById('apiKeyInput');
-    const icon  = document.getElementById('apiKeyToggleIcon');
-    if (input.type === 'password') {
-      input.type    = 'text';
-      icon.className = 'ti ti-eye-off';
-    } else {
-      input.type    = 'password';
-      icon.className = 'ti ti-eye';
-    }
+  // Settings drawer
+  document.getElementById('settingsBtn').addEventListener('click', () => {
+    document.getElementById('apiKeyInput').value  = localStorage.getItem('anthropic_api_key') || '';
+    document.getElementById('chemPiCode').value   = localStorage.getItem('chem_pi_code')  || '';
+    document.getElementById('chemPiLast').value   = localStorage.getItem('chem_pi_last')  || '';
+    document.getElementById('chemPiFirst').value  = localStorage.getItem('chem_pi_first') || '';
+    document.getElementById('chemBldg').value     = localStorage.getItem('chem_bldg')     || '';
+    document.getElementById('chemLab').value      = localStorage.getItem('chem_lab')      || '';
+    const drawer = document.getElementById('settingsDrawer');
+    drawer.classList.remove('hidden');
+    drawer.querySelector('.drawer__panel').scrollTop = 0;
   });
+  ['settingsBackdrop','closeSettingsBtn'].forEach(id =>
+    document.getElementById(id).addEventListener('click', () =>
+      document.getElementById('settingsDrawer').classList.add('hidden')
+    )
+  );
   document.getElementById('saveApiKeyBtn').addEventListener('click', () => {
     const k = document.getElementById('apiKeyInput').value.trim();
     if (k) localStorage.setItem('anthropic_api_key', k);
-  });
-  document.getElementById('saveLabDetailsBtn').addEventListener('click', () => {
-    [
-      ['chem_pi_code',  'chemPiCode'],
-      ['chem_pi_last',  'chemPiLast'],
-      ['chem_pi_first', 'chemPiFirst'],
-      ['chem_bldg',     'chemBldg'],
-      ['chem_lab',      'chemLab'],
-    ].forEach(([lsKey, elId]) => {
-      localStorage.setItem(lsKey, document.getElementById(elId).value.trim());
+    const chemFields = {
+      chem_pi_code:  'chemPiCode',
+      chem_pi_last:  'chemPiLast',
+      chem_pi_first: 'chemPiFirst',
+      chem_bldg:     'chemBldg',
+      chem_lab:      'chemLab',
+    };
+    Object.entries(chemFields).forEach(([lsKey, elId]) => {
+      const v = document.getElementById(elId).value.trim();
+      if (v) localStorage.setItem(lsKey, v);
     });
+    document.getElementById('settingsDrawer').classList.add('hidden');
   });
 
   // Session type buttons
@@ -1912,10 +1902,6 @@ async function init() {
   updateReviewBadges();
   if (window.navigator.standalone) document.body.classList.add('pwa-mode');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-  if (!getApiKey()) {
-    state.screen = '';
-    showScreen('settings', false);
-  }
 }
 
 init();
