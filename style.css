@@ -766,6 +766,27 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
 .legend-chip--yellow { background: #FFE082; color: #78350f; }
 .legend-chip--orange { background: #FFCC80; color: #7c2d12; }
 
+.download-error {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.download-fallback-link {
+  display: block;
+  margin: 6px 0 0;
+  padding: 10px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 6px;
+  font-size: 13px;
+  word-break: break-all;
+}
+.hidden { display: none !important; }
+
 .sheet-table-scroll { flex: 1; overflow: auto; }
 .sheet-table {
   width: 100%;

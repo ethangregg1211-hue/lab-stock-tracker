@@ -52,7 +52,7 @@ function exportToExcel(items, sessionType, filename) {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Inventory');
-  XLSX.writeFile(wb, filename || `labscan-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return wb;
 }
 
 function exportChemicalTemplate(items, filename) {
@@ -115,7 +115,7 @@ function exportChemicalTemplate(items, filename) {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-  XLSX.writeFile(wb, filename || `chemical-import-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return wb;
 }
 
 function guessFieldFromHeader(header, sessionType) {

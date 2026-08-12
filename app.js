@@ -1603,6 +1603,36 @@ async function _importChemicalsFromSheet() {
   showScreen('chemical-scan');
 }
 
+// ===== MOBILE-SAFE DOWNLOAD =====
+function _mobileDownload(wb, filename) {
+  const errEl  = document.getElementById('downloadError');
+  const linkEl = document.getElementById('downloadFallbackLink');
+  if (errEl)  { errEl.textContent = ''; errEl.classList.add('hidden'); }
+  if (linkEl) linkEl.classList.add('hidden');
+
+  try {
+    if (!window.XLSX) throw new Error('Excel library not loaded.');
+    // Base64 data URI — works in mobile Safari without popup blockers
+    const b64     = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+    const dataUri = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${b64}`;
+    const win     = window.open(dataUri, '_blank');
+    if (!win || win.closed || typeof win.closed === 'undefined') {
+      // Popup was blocked — show a long-press link fallback
+      if (linkEl) {
+        linkEl.href        = dataUri;
+        linkEl.download    = filename;
+        linkEl.textContent = `Tap and hold to save: ${filename}`;
+        linkEl.classList.remove('hidden');
+      }
+    }
+  } catch (err) {
+    if (errEl) {
+      errEl.textContent = `Download failed: ${err.message}`;
+      errEl.classList.remove('hidden');
+    }
+  }
+}
+
 // ===== LOADING =====
 function showLoading(msg) {
   document.getElementById('loadingMsg').textContent = msg || 'Loading...';
@@ -1874,20 +1904,27 @@ function bindEvents() {
   // Sheet view
   document.getElementById('sheetSearch').addEventListener('input', renderSheetView);
   document.getElementById('downloadBtn').addEventListener('click', () => {
-    if (state.reviewQueue.length) { alert('Clear the review queue before downloading.'); return; }
+    const errEl = document.getElementById('downloadError');
+    if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+
+    if (state.reviewQueue.length) {
+      if (errEl) { errEl.textContent = 'Clear the review queue before downloading.'; errEl.classList.remove('hidden'); }
+      return;
+    }
+
+    const date = new Date().toISOString().slice(0, 10);
 
     if (state.sessionType === 'chemical') {
       const unreconciled = state.items.filter(i => i.type === 'chemical' && !i.presentConfirmed).length;
-      if (unreconciled) {
-        const ok = confirm(`${unreconciled} chemical${unreconciled !== 1 ? 's' : ''} haven't been reconciled yet — export anyway?`);
-        if (!ok) return;
+      if (unreconciled && errEl) {
+        errEl.textContent = `${unreconciled} chemical${unreconciled !== 1 ? 's' : ''} haven't been reconciled. Export continuing anyway.`;
+        errEl.classList.remove('hidden');
       }
-      const date = new Date().toISOString().slice(0, 10);
-      const name = prompt('Filename:', `chemical-import-${date}.xlsx`);
-      if (name !== null) exportChemicalTemplate(state.items.filter(i => i.type === 'chemical'), name);
+      const wb = exportChemicalTemplate(state.items.filter(i => i.type === 'chemical'));
+      if (wb) _mobileDownload(wb, `chemical-import-${date}.xlsx`);
     } else {
-      const name = prompt('Filename:', `labscan-${new Date().toISOString().slice(0,10)}.xlsx`);
-      if (name !== null) exportToExcel(state.items, state.sessionType, name);
+      const wb = exportToExcel(state.items, state.sessionType);
+      if (wb) _mobileDownload(wb, `labscan-${date}.xlsx`);
     }
   });
 
