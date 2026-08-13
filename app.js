@@ -175,6 +175,7 @@ const state = {
   uploadedHeaders: [],
   uploadedRows: [],
   uploadedFileName: '',
+  uploadedColMapping: {},   // colIndex → fieldKey, built during import
   pendingChemMatch: null,
 };
 
@@ -1592,11 +1593,8 @@ async function _importChemicalsFromSheet() {
     return l.includes('chemical') && l.includes('name');
   });
 
-  // Catalog #: header contains "catalog" or "cat"
-  const catIdx = headers.findIndex(h => {
-    const l = h.toLowerCase();
-    return l.includes('catalog') || l.includes('cat');
-  });
+  // Catalog #: must contain "catalog" — do NOT use "cat" alone as it matches "location"
+  const catIdx = headers.findIndex(h => h.toLowerCase().includes('catalog'));
 
   // Best-effort extras — not required
   const lotIdx    = headers.findIndex(h => /lot/i.test(h));
@@ -1612,8 +1610,11 @@ async function _importChemicalsFromSheet() {
   if (casIdx    !== -1) mapping[casIdx]    = 'cas_num';
   if (physIdx   !== -1) mapping[physIdx]   = 'physical_state';
 
+  // Save mapping so the exporter can reverse-map fields back to original columns
+  state.uploadedColMapping = mapping;
+
   if (nameIdx !== -1 && rows.length > 0) {
-    await Promise.all(rows.map(row => {
+    await Promise.all(rows.map((row, rowIndex) => {
       const fields = {};
       Object.entries(mapping).forEach(([col, key]) => {
         fields[key] = String(row[parseInt(col)] ?? '').trim();
@@ -1621,7 +1622,12 @@ async function _importChemicalsFromSheet() {
       if (!fields.chemical_description) return Promise.resolve();
       // Skip the internal field-names row (row 2 of the university template)
       if (CHEM_INTERNAL_FIELD_NAMES.has(fields.chemical_description)) return Promise.resolve();
-      const item = { type: 'chemical', sessionId: state.sessionId, fields, status: 'imported' };
+      // Store originalRow so the exporter can reconstruct all columns from the uploaded file
+      const originalRow = Array.from({ length: headers.length }, (_, i) => row[i] ?? '');
+      const item = {
+        type: 'chemical', sessionId: state.sessionId, fields, status: 'imported',
+        originalRowIndex: rowIndex, originalRow,
+      };
       return addItemToDB(item).then(id => { item.id = id; state.items.push(item); });
     }));
     await persistSession();
@@ -1644,11 +1650,21 @@ function _buildDownloadBlob() {
   const date = new Date().toISOString().slice(0, 10);
   let wb, filename;
   if (state.sessionType === 'chemical') {
-    const chemItems = state.items.filter(i =>
-      i.type === 'chemical' &&
-      !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? ''))
-    );
-    wb = exportChemicalTemplate(chemItems);
+    const chemItems = state.items.filter(i => i.type === 'chemical');
+    if (state.uploadedHeaders.length > 0) {
+      // Preserve original file structure: same columns, original data, only new rows highlighted
+      wb = exportChemicalFromOriginal(
+        state.uploadedHeaders,
+        state.uploadedRows,
+        state.uploadedColMapping,
+        chemItems
+      );
+    } else {
+      // No uploaded file — fall back to the university template format
+      wb = exportChemicalTemplate(
+        chemItems.filter(i => !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? '')))
+      );
+    }
     filename = `chemical-import-${date}.xlsx`;
   } else {
     wb = exportToExcel(state.items, state.sessionType);

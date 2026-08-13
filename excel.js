@@ -118,6 +118,69 @@ function exportChemicalTemplate(items, filename) {
   return wb;
 }
 
+// Export using the original uploaded file's column structure.
+// - Original rows (confirmed + unscanned) pass through with their original data intact.
+// - Newly added chemicals (no originalRow) are appended with yellow fill.
+function exportChemicalFromOriginal(uploadedHeaders, uploadedRows, colMapping, items) {
+  if (!window.XLSX) return null;
+
+  // Reverse map: fieldKey → column index in the original file
+  const fieldToCol = {};
+  Object.entries(colMapping).forEach(([col, key]) => {
+    fieldToCol[key] = parseInt(col, 10);
+  });
+
+  const nameColIdx = fieldToCol['chemical_description'];
+
+  // Index items that came from the original file by their row index
+  const rowToItem = {};
+  items.forEach(i => {
+    if (i.originalRowIndex !== undefined) rowToItem[i.originalRowIndex] = i;
+  });
+
+  const outputRows = []; // { cells: [...], isNew: boolean }
+
+  // Pass through all original rows in their original order
+  uploadedRows.forEach((originalRow, rowIdx) => {
+    // Skip the hidden field-names row (contains internal identifiers, not real data)
+    if (nameColIdx !== undefined) {
+      const cellVal = String(originalRow[nameColIdx] ?? '');
+      if (typeof CHEM_INTERNAL_FIELD_NAMES !== 'undefined' && CHEM_INTERNAL_FIELD_NAMES.has(cellVal)) return;
+    }
+    // Always output the original row data as-is — all columns preserved
+    outputRows.push({ cells: uploadedHeaders.map((_, c) => originalRow[c] ?? ''), isNew: false });
+  });
+
+  // Append chemicals that were added during this session (no originalRow)
+  items.filter(i => i.originalRowIndex === undefined).forEach(item => {
+    const row = new Array(uploadedHeaders.length).fill('');
+    Object.entries(colMapping).forEach(([col, key]) => {
+      const v = item.fields?.[key];
+      if (v !== undefined && v !== null && v !== '') row[parseInt(col, 10)] = v;
+    });
+    outputRows.push({ cells: row, isNew: true });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([uploadedHeaders, ...outputRows.map(r => r.cells)]);
+
+  // Yellow fill only on new rows
+  outputRows.forEach((entry, i) => {
+    if (!entry.isNew) return;
+    const rowIdx = i + 1; // +1 for header row
+    for (let c = 0; c < uploadedHeaders.length; c++) {
+      const ref = XLSX.utils.encode_cell({ r: rowIdx, c });
+      if (!ws[ref]) ws[ref] = { v: '', t: 's' };
+      ws[ref].s = { fill: { patternType: 'solid', fgColor: { rgb: 'FFEFC0' } } };
+    }
+  });
+
+  ws['!cols'] = uploadedHeaders.map(h => ({ wch: Math.max(h.length + 2, 14) }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  return wb;
+}
+
 function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
