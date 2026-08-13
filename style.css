@@ -524,9 +524,11 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
   line-height: 1.3;
 }
 .front-chip--found   { background: #dcfce7; color: #166534; }
-.front-chip--missing { background: #f1f5f9; color: #94a3b8; }
+.front-chip--missing { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 .front-chip__key   { font-weight: 600; }
 .front-chip__value { font-weight: 400; }
+.chem-back-btn   { margin-top: 8px; }
+.chem-cancel-btn { margin-top: 6px; width: 100%; }
 
 .camera-slot { flex-shrink: 0; background: #111; height: 200px; }
 .camera-slot:empty { height: 0; }

@@ -666,7 +666,7 @@ function saveDesignedTemplate() {
 // ===== SCAN CAP =====
 function _checkScanCap() {
   const over500 = state.totalScans >= 500;
-  ['abReadBtn','histReadBtn','chemReadBtn'].forEach(id => {
+  ['abReadBtn','histReadBtn','chemReadBtn','chemReadBackBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = over500;
   });

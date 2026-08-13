@@ -421,7 +421,8 @@
     <div class="chem-front-result hidden" id="chemFrontResult">
       <div class="chem-front-result__chips" id="chemFrontFound"></div>
       <p class="chem-front-result__hint"><i class="ti ti-rotate-2"></i> Rotate bottle and scan the back for remaining fields</p>
-      <button class="btn btn--ghost btn--sm" onclick="_clearChemFrontScan()">Cancel front scan</button>
+      <button class="btn btn--primary btn--full chem-back-btn" id="chemReadBackBtn" onclick="handleReadLabel('chemical')"><i class="ti ti-camera"></i> Read label (back)</button>
+      <button class="btn btn--ghost btn--sm chem-cancel-btn" onclick="_clearChemFrontScan()">Cancel front scan</button>
     </div>
     <div class="undo-strip-wrap">
       <div class="undo-strip" id="chemUndoStrip"></div>
