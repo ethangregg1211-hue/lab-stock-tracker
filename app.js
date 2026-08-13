@@ -175,7 +175,9 @@ const state = {
   uploadedHeaders: [],
   uploadedRows: [],
   uploadedFileName: '',
-  uploadedColMapping: {},   // colIndex → fieldKey, built during import
+  uploadedColMapping: {},      // colIndex → fieldKey, built during import
+  uploadedFieldNamesRow: null, // raw row 2 of the university template (preserved for export)
+  pendingChemFrontScan: null,  // front-photo result when in front/back scan mode
   pendingChemMatch: null,
 };
 
@@ -375,7 +377,7 @@ async function finishSession() {
   Object.assign(state, {
     sessionType: null, sessionId: null, totalScans: 0,
     items: [], reviewQueue: [], lastScans: [],
-    pendingScan1: null, currentStudy: null,
+    pendingScan1: null, pendingChemFrontScan: null, currentStudy: null,
     histologyMode: 'slides', activeTemplate: null,
     chemRemovalStaging: {},
   });
@@ -710,7 +712,76 @@ async function initChemicalScan() {
   _checkScanCap();
   renderUndoStrip();
   renderLastScanned();
+  _initChemScanMode();
   await startCamera('chemCameraSlot');
+}
+
+function _getChemScanMode() {
+  return localStorage.getItem('chem_scan_mode') || 'single';
+}
+
+function _setChemScanMode(mode) {
+  localStorage.setItem('chem_scan_mode', mode);
+  document.getElementById('chemSingleModeBtn')?.classList.toggle('mode-tab--active', mode === 'single');
+  document.getElementById('chemFrontBackModeBtn')?.classList.toggle('mode-tab--active', mode === 'frontback');
+  _clearChemFrontScan();
+}
+
+function _initChemScanMode() {
+  const mode = _getChemScanMode();
+  document.getElementById('chemSingleModeBtn')?.classList.toggle('mode-tab--active', mode === 'single');
+  document.getElementById('chemFrontBackModeBtn')?.classList.toggle('mode-tab--active', mode === 'frontback');
+  if (mode === 'single') _clearChemFrontScan();
+  _updateChemReadBtn();
+}
+
+function _updateChemReadBtn() {
+  const btn = document.getElementById('chemReadBtn');
+  if (!btn) return;
+  const mode = _getChemScanMode();
+  if (mode === 'frontback') {
+    btn.innerHTML = state.pendingChemFrontScan
+      ? '<i class="ti ti-camera"></i> Read label (back)'
+      : '<i class="ti ti-camera"></i> Read label (front)';
+  } else {
+    btn.innerHTML = '<i class="ti ti-camera"></i> Read label';
+  }
+}
+
+function _clearChemFrontScan() {
+  state.pendingChemFrontScan = null;
+  const el = document.getElementById('chemFrontResult');
+  if (el) el.classList.add('hidden');
+  _updateChemReadBtn();
+}
+
+function _renderChemFrontResult(result) {
+  const chemFields = FIELDS['chemical'];
+  const found = [], missing = [];
+
+  chemFields.forEach(f => {
+    const r    = result[f.key] || { value: null, confidence: 'low' };
+    const rank = ({ high: 2, medium: 1, low: 0 }[r.confidence] ?? 0);
+    if (rank >= 1 && r.value) found.push({ label: f.label, value: r.value });
+    else missing.push(f.label);
+  });
+
+  let html = '';
+  if (found.length) {
+    html += `<p class="chem-front-result__label">Found on front</p>`;
+    html += found.map(f =>
+      `<span class="front-chip front-chip--found"><span class="front-chip__key">${esc(f.label)}</span><span class="front-chip__value">${esc(f.value)}</span></span>`
+    ).join('');
+  }
+  if (missing.length) {
+    html += `<p class="chem-front-result__label" style="margin-top:6px">Still missing</p>`;
+    html += missing.map(l =>
+      `<span class="front-chip front-chip--missing"><span class="front-chip__key">${esc(l)}</span></span>`
+    ).join('');
+  }
+
+  document.getElementById('chemFrontFound').innerHTML = html;
+  document.getElementById('chemFrontResult').classList.remove('hidden');
 }
 
 function _updateChemStatus() {
@@ -1053,7 +1124,7 @@ async function handleReadLabel(sessionType) {
       result.study_id = { value: state.currentStudy, confidence: 'locked' };
     }
 
-    // Chemical: strip catalog suffix, default physical_state, run match, show custom card
+    // Chemical: strip catalog suffix, default physical_state, front/back or single-shot
     if (sessionType === 'chemical') {
       if (result.catalog_number?.value) {
         result.catalog_number.value = _stripCatalogSuffix(result.catalog_number.value);
@@ -1061,6 +1132,31 @@ async function handleReadLabel(sessionType) {
       if (!result.physical_state?.value) {
         result.physical_state = { value: 'Solid', confidence: 'high' };
       }
+
+      if (_getChemScanMode() === 'frontback') {
+        if (state.pendingChemFrontScan === null) {
+          // Front photo complete — show partial result, wait for back
+          state.pendingChemFrontScan = result;
+          _renderChemFrontResult(result);
+          _updateChemReadBtn();
+        } else {
+          // Back photo complete — merge both scans and proceed
+          const merged = _mergeScanResults(state.pendingChemFrontScan, result);
+          _clearChemFrontScan();
+          if (merged.catalog_number?.value) {
+            merged.catalog_number.value = _stripCatalogSuffix(merged.catalog_number.value);
+          }
+          const extractedVals = _extractFieldValues(merged, 'chemical');
+          const chemMatch     = _findChemicalMatch(extractedVals);
+          state.pendingChemMatch = chemMatch || null;
+          state.pendingResult    = merged;
+          showScreen('box-result');
+          _renderChemicalResultCard(merged, chemMatch);
+        }
+        return;
+      }
+
+      // Single-photo mode (default)
       const extractedVals = _extractFieldValues(result, 'chemical');
       const chemMatch = _findChemicalMatch(extractedVals);
       state.pendingChemMatch = chemMatch || null;
@@ -1587,42 +1683,67 @@ async function _importChemicalsFromSheet() {
   const headers = state.uploadedHeaders;
   const rows    = state.uploadedRows;
 
-  // Chemical Name: header must contain both "chemical" and "name"
+  // Chemical Name: header contains "chemical" AND "name", or is literally "chemical_description"
   const nameIdx = headers.findIndex(h => {
     const l = h.toLowerCase();
-    return l.includes('chemical') && l.includes('name');
+    return (l.includes('chemical') && l.includes('name')) || l === 'chemical_description';
   });
 
-  // Catalog #: must contain "catalog" — do NOT use "cat" alone as it matches "location"
-  const catIdx = headers.findIndex(h => h.toLowerCase().includes('catalog'));
-
-  // Best-effort extras — not required
-  const lotIdx    = headers.findIndex(h => /lot/i.test(h));
-  const vendorIdx = headers.findIndex(h => /vendor|supplier/i.test(h));
-  const casIdx    = headers.findIndex(h => /\bcas\b/i.test(h));
-  const physIdx   = headers.findIndex(h => /physical.?state/i.test(h));
+  // Catalog #: must contain "catalog" — "cat" alone falsely matches "lo[cat]ion"
+  const catIdx     = headers.findIndex(h => h.toLowerCase().includes('catalog'));
+  const lotIdx     = headers.findIndex(h => /lot/i.test(h));
+  const vendorIdx  = headers.findIndex(h => /vendor|supplier/i.test(h));
+  const casIdx     = headers.findIndex(h => /\bcas\b/i.test(h));
+  const physIdx    = headers.findIndex(h => /physical.?state/i.test(h));
+  const locIdx     = headers.findIndex(h => /in.?lab.?loc|storage.?loc/i.test(h));
+  const contIdx    = headers.findIndex(h => /of\s*containers/i.test(h));
+  const amtIdx     = headers.findIndex(h => /amount\s*per/i.test(h));
+  const cuIdx      = headers.findIndex(h => /unit\s*of\s*measure/i.test(h));
+  const rcptDtIdx  = headers.findIndex(h => /receipt\s*date/i.test(h));
+  // PI columns — stored with __ prefix so exporter can fill them for new chemicals
+  const piCodeIdx  = headers.findIndex(h => /pi\s*code/i.test(h));
+  const piLastIdx  = headers.findIndex(h => /pi\s*last/i.test(h));
+  const piFirstIdx = headers.findIndex(h => /pi\s*first/i.test(h));
+  const bldgIdx    = headers.findIndex(h => /bldg/i.test(h));
+  const labIdx     = headers.findIndex(h => /^lab$/i.test(h.trim()));
 
   const mapping = {};
-  if (nameIdx   !== -1) mapping[nameIdx]   = 'chemical_description';
-  if (catIdx    !== -1) mapping[catIdx]    = 'catalog_number';
-  if (lotIdx    !== -1) mapping[lotIdx]    = 'lot_number';
-  if (vendorIdx !== -1) mapping[vendorIdx] = 'vendor';
-  if (casIdx    !== -1) mapping[casIdx]    = 'cas_num';
-  if (physIdx   !== -1) mapping[physIdx]   = 'physical_state';
+  if (nameIdx     !== -1) mapping[nameIdx]     = 'chemical_description';
+  if (catIdx      !== -1) mapping[catIdx]      = 'catalog_number';
+  if (lotIdx      !== -1) mapping[lotIdx]      = 'lot_number';
+  if (vendorIdx   !== -1) mapping[vendorIdx]   = 'vendor';
+  if (casIdx      !== -1) mapping[casIdx]      = 'cas_num';
+  if (physIdx     !== -1) mapping[physIdx]     = 'physical_state';
+  if (locIdx      !== -1) mapping[locIdx]      = 'storage_location';
+  if (contIdx     !== -1) mapping[contIdx]     = 'receipt_quantity';
+  if (amtIdx      !== -1) mapping[amtIdx]      = 'unit';
+  if (cuIdx       !== -1) mapping[cuIdx]       = 'chemical_unit';
+  if (rcptDtIdx   !== -1) mapping[rcptDtIdx]   = 'receipt_date';
+  if (piCodeIdx   !== -1) mapping[piCodeIdx]   = '__pi_code';
+  if (piLastIdx   !== -1) mapping[piLastIdx]   = '__pi_last';
+  if (piFirstIdx  !== -1) mapping[piFirstIdx]  = '__pi_first';
+  if (bldgIdx     !== -1) mapping[bldgIdx]     = '__bldg';
+  if (labIdx      !== -1) mapping[labIdx]      = '__lab';
 
-  // Save mapping so the exporter can reverse-map fields back to original columns
   state.uploadedColMapping = mapping;
+
+  // Detect and preserve the field-names row (row 2 of the university template) exactly
+  state.uploadedFieldNamesRow = null;
+  if (nameIdx !== -1 && rows.length > 0) {
+    const testVal = String(rows[0][nameIdx] ?? '').trim();
+    if (CHEM_INTERNAL_FIELD_NAMES.has(testVal)) {
+      state.uploadedFieldNamesRow = rows[0].map(c => String(c ?? ''));
+    }
+  }
 
   if (nameIdx !== -1 && rows.length > 0) {
     await Promise.all(rows.map((row, rowIndex) => {
       const fields = {};
       Object.entries(mapping).forEach(([col, key]) => {
-        fields[key] = String(row[parseInt(col)] ?? '').trim();
+        if (!key.startsWith('__')) fields[key] = String(row[parseInt(col)] ?? '').trim();
       });
       if (!fields.chemical_description) return Promise.resolve();
-      // Skip the internal field-names row (row 2 of the university template)
       if (CHEM_INTERNAL_FIELD_NAMES.has(fields.chemical_description)) return Promise.resolve();
-      // Store originalRow so the exporter can reconstruct all columns from the uploaded file
       const originalRow = Array.from({ length: headers.length }, (_, i) => row[i] ?? '');
       const item = {
         type: 'chemical', sessionId: state.sessionId, fields, status: 'imported',
@@ -1657,7 +1778,8 @@ function _buildDownloadBlob() {
         state.uploadedHeaders,
         state.uploadedRows,
         state.uploadedColMapping,
-        chemItems
+        chemItems,
+        state.uploadedFieldNamesRow
       );
     } else {
       // No uploaded file — fall back to the university template format

@@ -413,7 +413,16 @@
       <span id="chemTotal">0 scans</span>
       <span id="chemConfirmedCount">0/0 confirmed present</span>
     </div>
+    <div class="scan-mode-toggle" id="chemScanModeToggle">
+      <button class="mode-tab mode-tab--active" id="chemSingleModeBtn" onclick="_setChemScanMode('single')">Single photo</button>
+      <button class="mode-tab" id="chemFrontBackModeBtn" onclick="_setChemScanMode('frontback')">Front &amp; back</button>
+    </div>
     <div class="camera-slot" id="chemCameraSlot"></div>
+    <div class="chem-front-result hidden" id="chemFrontResult">
+      <div class="chem-front-result__chips" id="chemFrontFound"></div>
+      <p class="chem-front-result__hint"><i class="ti ti-rotate-2"></i> Rotate bottle and scan the back for remaining fields</p>
+      <button class="btn btn--ghost btn--sm" onclick="_clearChemFrontScan()">Cancel front scan</button>
+    </div>
     <div class="undo-strip-wrap">
       <div class="undo-strip" id="chemUndoStrip"></div>
     </div>

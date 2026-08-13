@@ -119,12 +119,12 @@ function exportChemicalTemplate(items, filename) {
 }
 
 // Export using the original uploaded file's column structure.
-// - Original rows (confirmed + unscanned) pass through with their original data intact.
-// - Newly added chemicals (no originalRow) are appended with yellow fill.
-function exportChemicalFromOriginal(uploadedHeaders, uploadedRows, colMapping, items) {
+// Row 1: same headers as uploaded file.
+// Row 2: field-names row from uploaded file (hidden), preserved exactly.
+// Row 3+: original rows pass through unchanged; new chemicals appended with yellow fill.
+function exportChemicalFromOriginal(uploadedHeaders, uploadedRows, colMapping, items, fieldNamesRow) {
   if (!window.XLSX) return null;
 
-  // Reverse map: fieldKey → column index in the original file
   const fieldToCol = {};
   Object.entries(colMapping).forEach(([col, key]) => {
     fieldToCol[key] = parseInt(col, 10);
@@ -132,49 +132,66 @@ function exportChemicalFromOriginal(uploadedHeaders, uploadedRows, colMapping, i
 
   const nameColIdx = fieldToCol['chemical_description'];
 
-  // Index items that came from the original file by their row index
-  const rowToItem = {};
-  items.forEach(i => {
-    if (i.originalRowIndex !== undefined) rowToItem[i.originalRowIndex] = i;
-  });
+  // PI defaults — written into new chemical rows using the PI column indices
+  const piCode  = localStorage.getItem('chem_pi_code')  || 'P049';
+  const piLast  = localStorage.getItem('chem_pi_last')  || 'Welm Lab';
+  const piFirst = localStorage.getItem('chem_pi_first') || 'Alana/Bryan';
+  const bldg    = localStorage.getItem('chem_bldg')     || '0554';
+  const defLab  = localStorage.getItem('chem_lab')      || '02549';
+  const piValues = { '__pi_code': piCode, '__pi_last': piLast, '__pi_first': piFirst, '__bldg': bldg, '__lab': defLab };
 
-  const outputRows = []; // { cells: [...], isNew: boolean }
+  const outputRows = []; // { cells: [...], isNew: boolean, corrected: boolean }
 
-  // Pass through all original rows in their original order
+  // Pass through all original rows, skipping only the field-names row
+  // (it is output separately as hidden row 2)
   uploadedRows.forEach((originalRow, rowIdx) => {
-    // Skip the hidden field-names row (contains internal identifiers, not real data)
     if (nameColIdx !== undefined) {
       const cellVal = String(originalRow[nameColIdx] ?? '');
       if (typeof CHEM_INTERNAL_FIELD_NAMES !== 'undefined' && CHEM_INTERNAL_FIELD_NAMES.has(cellVal)) return;
     }
-    // Always output the original row data as-is — all columns preserved
-    outputRows.push({ cells: uploadedHeaders.map((_, c) => originalRow[c] ?? ''), isNew: false });
+    outputRows.push({ cells: uploadedHeaders.map((_, c) => originalRow[c] ?? ''), isNew: false, corrected: false });
   });
 
-  // Append chemicals that were added during this session (no originalRow)
+  // Append chemicals added this session (no originalRowIndex means not from the uploaded file)
   items.filter(i => i.originalRowIndex === undefined).forEach(item => {
     const row = new Array(uploadedHeaders.length).fill('');
     Object.entries(colMapping).forEach(([col, key]) => {
-      const v = item.fields?.[key];
-      if (v !== undefined && v !== null && v !== '') row[parseInt(col, 10)] = v;
+      const colIdx = parseInt(col, 10);
+      if (key.startsWith('__')) {
+        // PI column — fill from localStorage defaults
+        row[colIdx] = piValues[key] || '';
+      } else {
+        const v = item.fields?.[key];
+        if (v !== undefined && v !== null && v !== '') row[colIdx] = v;
+      }
     });
-    outputRows.push({ cells: row, isNew: true });
+    outputRows.push({ cells: row, isNew: true, corrected: item.status === 'corrected' });
   });
 
-  const ws = XLSX.utils.aoa_to_sheet([uploadedHeaders, ...outputRows.map(r => r.cells)]);
+  // Build the field-names row (row 2) — use what was read from the file, or an empty row
+  const fieldNamesRowCells = fieldNamesRow
+    ? uploadedHeaders.map((_, c) => String(fieldNamesRow[c] ?? ''))
+    : new Array(uploadedHeaders.length).fill('');
 
-  // Yellow fill only on new rows
+  const aoa = [uploadedHeaders, fieldNamesRowCells, ...outputRows.map(r => r.cells)];
+  const ws  = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Hide row 2 (field-names row) — same as the original uploaded file
+  ws['!rows'] = [undefined, { hidden: true }];
+
+  // Highlight new chemical rows: yellow (#FFEFC0) for auto, orange (#FFD9B3) for corrected
   outputRows.forEach((entry, i) => {
     if (!entry.isNew) return;
-    const rowIdx = i + 1; // +1 for header row
+    const rowIdx = i + 2; // +1 for header, +1 for field-names row
+    const rgb    = entry.corrected ? 'FFD9B3' : 'FFEFC0';
     for (let c = 0; c < uploadedHeaders.length; c++) {
       const ref = XLSX.utils.encode_cell({ r: rowIdx, c });
       if (!ws[ref]) ws[ref] = { v: '', t: 's' };
-      ws[ref].s = { fill: { patternType: 'solid', fgColor: { rgb: 'FFEFC0' } } };
+      ws[ref].s = { fill: { patternType: 'solid', fgColor: { rgb } } };
     }
   });
 
-  ws['!cols'] = uploadedHeaders.map(h => ({ wch: Math.max(h.length + 2, 14) }));
+  ws['!cols'] = uploadedHeaders.map(h => ({ wch: Math.max(String(h).length + 2, 14) }));
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
