@@ -81,11 +81,11 @@ function exportChemicalTemplate(items, filename) {
     'order_date','will_expire',
   ];
 
-  const piCode  = localStorage.getItem('chem_pi_code')  || '';
-  const piLast  = localStorage.getItem('chem_pi_last')  || '';
-  const piFirst = localStorage.getItem('chem_pi_first') || '';
-  const bldg    = localStorage.getItem('chem_bldg')     || '';
-  const defLab  = localStorage.getItem('chem_lab')      || '';
+  const piCode  = localStorage.getItem('labscan_pi_code')      || '';
+  const piLast  = localStorage.getItem('labscan_pi_lastname')  || '';
+  const piFirst = localStorage.getItem('labscan_pi_firstname') || '';
+  const bldg    = localStorage.getItem('labscan_bldg_code')    || '';
+  const defLab  = localStorage.getItem('labscan_lab')          || '';
 
   const dataRows = items.map(f => {
     const d = f.fields || {};
@@ -121,44 +121,35 @@ function exportChemicalTemplate(items, filename) {
 // Export using the original uploaded file's column structure.
 // Row 1: same headers as uploaded file.
 // Row 2: field-names row from uploaded file (hidden), preserved exactly.
-// Row 3+: original rows pass through unchanged; new chemicals appended with yellow fill.
-function exportChemicalFromOriginal(uploadedHeaders, uploadedRows, colMapping, items, fieldNamesRow) {
+// Row 3+: original rows reconstructed from item.originalRow (sorted by originalRowIndex);
+//         new chemicals (status auto/corrected) appended with yellow/orange fill.
+function exportChemicalFromOriginal(uploadedHeaders, colMapping, items, fieldNamesRow) {
   if (!window.XLSX) return null;
 
-  const fieldToCol = {};
-  Object.entries(colMapping).forEach(([col, key]) => {
-    fieldToCol[key] = parseInt(col, 10);
-  });
-
-  const nameColIdx = fieldToCol['chemical_description'];
-
-  // PI defaults — written into new chemical rows using the PI column indices
-  const piCode  = localStorage.getItem('chem_pi_code')  || 'P049';
-  const piLast  = localStorage.getItem('chem_pi_last')  || 'Welm Lab';
-  const piFirst = localStorage.getItem('chem_pi_first') || 'Alana/Bryan';
-  const bldg    = localStorage.getItem('chem_bldg')     || '0554';
-  const defLab  = localStorage.getItem('chem_lab')      || '02549';
+  const piCode  = localStorage.getItem('labscan_pi_code')      || 'P049';
+  const piLast  = localStorage.getItem('labscan_pi_lastname')  || 'Welm Lab';
+  const piFirst = localStorage.getItem('labscan_pi_firstname') || 'Alana/Bryan';
+  const bldg    = localStorage.getItem('labscan_bldg_code')    || '0554';
+  const defLab  = localStorage.getItem('labscan_lab')          || '02549';
   const piValues = { '__pi_code': piCode, '__pi_last': piLast, '__pi_first': piFirst, '__bldg': bldg, '__lab': defLab };
 
-  const outputRows = []; // { cells: [...], isNew: boolean, corrected: boolean }
+  const outputRows = [];
 
-  // Pass through all original rows, skipping only the field-names row
-  // (it is output separately as hidden row 2)
-  uploadedRows.forEach((originalRow, rowIdx) => {
-    if (nameColIdx !== undefined) {
-      const cellVal = String(originalRow[nameColIdx] ?? '');
-      if (typeof CHEM_INTERNAL_FIELD_NAMES !== 'undefined' && CHEM_INTERNAL_FIELD_NAMES.has(cellVal)) return;
-    }
-    outputRows.push({ cells: uploadedHeaders.map((_, c) => originalRow[c] ?? ''), isNew: false, corrected: false });
+  // Reconstruct original rows from per-item originalRow arrays, sorted by their position in the file
+  const importedItems = items
+    .filter(i => (i.status === 'imported' || i.status === 'confirmed') && i.originalRow)
+    .sort((a, b) => (a.originalRowIndex ?? 0) - (b.originalRowIndex ?? 0));
+
+  importedItems.forEach(item => {
+    outputRows.push({ cells: uploadedHeaders.map((_, c) => item.originalRow[c] ?? ''), isNew: false, corrected: false });
   });
 
-  // Append chemicals added this session (no originalRowIndex means not from the uploaded file)
-  items.filter(i => i.originalRowIndex === undefined).forEach(item => {
+  // Append chemicals added this session (not imported from file)
+  items.filter(i => i.status !== 'imported' && i.status !== 'confirmed').forEach(item => {
     const row = new Array(uploadedHeaders.length).fill('');
     Object.entries(colMapping).forEach(([col, key]) => {
       const colIdx = parseInt(col, 10);
       if (key.startsWith('__')) {
-        // PI column — fill from localStorage defaults
         row[colIdx] = piValues[key] || '';
       } else {
         const v = item.fields?.[key];

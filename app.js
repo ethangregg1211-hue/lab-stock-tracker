@@ -332,16 +332,19 @@ async function resumeSessionFromDB() {
   const session = await loadSession();
   if (!session) return;
   Object.assign(state, {
-    sessionType:        session.sessionType,
-    sessionId:          session.sessionId,
-    totalScans:         session.totalScans        || 0,
-    items:              session.items              || [],
-    reviewQueue:        session.reviewQueue        || [],
-    lastScans:          session.lastScans          || [],
-    currentStudy:       session.currentStudy       || null,
-    histologyMode:      session.histologyMode      || 'slides',
-    activeTemplate:     session.activeTemplate     || null,
-    chemRemovalStaging: session.chemRemovalStaging || {},
+    sessionType:           session.sessionType,
+    sessionId:             session.sessionId,
+    totalScans:            session.totalScans           || 0,
+    items:                 session.items                || [],
+    reviewQueue:           session.reviewQueue          || [],
+    lastScans:             session.lastScans            || [],
+    currentStudy:          session.currentStudy         || null,
+    histologyMode:         session.histologyMode        || 'slides',
+    activeTemplate:        session.activeTemplate       || null,
+    chemRemovalStaging:    session.chemRemovalStaging   || {},
+    uploadedHeaders:       session.uploadedHeaders      || [],
+    uploadedColMapping:    session.uploadedColMapping   || {},
+    uploadedFieldNamesRow: session.uploadedFieldNamesRow || null,
   });
   document.getElementById('resumeCard').classList.add('hidden');
   showScanScreen(false);
@@ -355,16 +358,19 @@ async function discardSessionFromDB() {
 async function persistSession() {
   try {
     await saveSession({
-      sessionType:        state.sessionType,
-      sessionId:          state.sessionId,
-      totalScans:         state.totalScans,
-      items:              state.items,
-      reviewQueue:        state.reviewQueue,
-      lastScans:          state.lastScans,
-      currentStudy:       state.currentStudy,
-      histologyMode:      state.histologyMode,
-      activeTemplate:     state.activeTemplate,
-      chemRemovalStaging: state.chemRemovalStaging,
+      sessionType:           state.sessionType,
+      sessionId:             state.sessionId,
+      totalScans:            state.totalScans,
+      items:                 state.items,
+      reviewQueue:           state.reviewQueue,
+      lastScans:             state.lastScans,
+      currentStudy:          state.currentStudy,
+      histologyMode:         state.histologyMode,
+      activeTemplate:        state.activeTemplate,
+      chemRemovalStaging:    state.chemRemovalStaging,
+      uploadedHeaders:       state.uploadedHeaders,
+      uploadedColMapping:    state.uploadedColMapping,
+      uploadedFieldNamesRow: state.uploadedFieldNamesRow,
     });
   } catch (e) {
     console.warn('Session save failed', e);
@@ -1776,7 +1782,6 @@ function _buildDownloadBlob() {
       // Preserve original file structure: same columns, original data, only new rows highlighted
       wb = exportChemicalFromOriginal(
         state.uploadedHeaders,
-        state.uploadedRows,
         state.uploadedColMapping,
         chemItems,
         state.uploadedFieldNamesRow
@@ -1915,11 +1920,11 @@ function bindEvents() {
   // Settings drawer
   document.getElementById('settingsBtn').addEventListener('click', () => {
     document.getElementById('apiKeyInput').value  = localStorage.getItem('anthropic_api_key') || '';
-    document.getElementById('chemPiCode').value   = localStorage.getItem('chem_pi_code')  || '';
-    document.getElementById('chemPiLast').value   = localStorage.getItem('chem_pi_last')  || '';
-    document.getElementById('chemPiFirst').value  = localStorage.getItem('chem_pi_first') || '';
-    document.getElementById('chemBldg').value     = localStorage.getItem('chem_bldg')     || '';
-    document.getElementById('chemLab').value      = localStorage.getItem('chem_lab')      || '';
+    document.getElementById('chemPiCode').value   = localStorage.getItem('labscan_pi_code')      || '';
+    document.getElementById('chemPiLast').value   = localStorage.getItem('labscan_pi_lastname')  || '';
+    document.getElementById('chemPiFirst').value  = localStorage.getItem('labscan_pi_firstname') || '';
+    document.getElementById('chemBldg').value     = localStorage.getItem('labscan_bldg_code')    || '';
+    document.getElementById('chemLab').value      = localStorage.getItem('labscan_lab')          || '';
     const drawer = document.getElementById('settingsDrawer');
     drawer.classList.remove('hidden');
     drawer.querySelector('.drawer__panel').scrollTop = 0;
@@ -1935,11 +1940,11 @@ function bindEvents() {
     console.log('[LabScan] Saving API key to localStorage, length:', k.length);
     if (k) localStorage.setItem('anthropic_api_key', k);
     const chemFields = {
-      chem_pi_code:  'chemPiCode',
-      chem_pi_last:  'chemPiLast',
-      chem_pi_first: 'chemPiFirst',
-      chem_bldg:     'chemBldg',
-      chem_lab:      'chemLab',
+      labscan_pi_code:      'chemPiCode',
+      labscan_pi_lastname:  'chemPiLast',
+      labscan_pi_firstname: 'chemPiFirst',
+      labscan_bldg_code:    'chemBldg',
+      labscan_lab:          'chemLab',
     };
     Object.entries(chemFields).forEach(([lsKey, elId]) => {
       const v = document.getElementById(elId).value.trim();
