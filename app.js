@@ -121,7 +121,8 @@ const DEFAULT_TEMPLATES = [
 
 function scanFieldsFor(type) {
   if (type === 'histology' && state.activeTemplate) {
-    const templateKeys = new Set(['study_id', ...state.activeTemplate.rows.flatMap(r => r.fields)]);
+    const rows = state.activeTemplate.rows || [];
+    const templateKeys = new Set(['study_id', ...rows.flatMap(r => r.fields || [])]);
     const customKeys = new Set((state.activeTemplate.customFields || []).map(f => f.key));
     return [
       ...(FIELDS.histology || []).filter(f => templateKeys.has(f.key)),
@@ -681,10 +682,12 @@ function _checkScanCap() {
 // ===== ANTIBODY SCAN =====
 async function initAntibodyScan() {
   document.getElementById('abTotal').textContent = `${state.totalScans} scans`;
-  _checkScanCap();
   renderUndoStrip();
   renderLastScanned();
+  const readBtn = document.getElementById('abReadBtn');
+  if (readBtn) readBtn.disabled = true;
   await startCamera('abCameraSlot');
+  _checkScanCap();
 }
 
 // ===== HISTOLOGY SCAN =====
@@ -706,20 +709,27 @@ async function initHistologyScan() {
   if (tmplEl) tmplEl.textContent = state.activeTemplate.name;
 
   document.getElementById('histTotal').textContent = `${state.totalScans} scans`;
-  _checkScanCap();
   renderUndoStrip();
   renderLastScanned();
+
+  // Disable shutter until camera stream is confirmed live — prevents tapping during getUserMedia
+  const readBtn = document.getElementById('histReadBtn');
+  if (readBtn) readBtn.disabled = true;
   await startCamera('histCameraSlot');
+  // Re-enable respecting scan cap
+  _checkScanCap();
 }
 
 // ===== CHEMICAL SCAN =====
 async function initChemicalScan() {
   _updateChemStatus();
-  _checkScanCap();
   renderUndoStrip();
   renderLastScanned();
   _initChemScanMode();
+  const readBtn = document.getElementById('chemReadBtn');
+  if (readBtn) readBtn.disabled = true;
   await startCamera('chemCameraSlot');
+  _checkScanCap();
 }
 
 function _getChemScanMode() {
@@ -1182,7 +1192,11 @@ async function handleReadLabel(sessionType) {
     renderResultCard(scanFieldsFor(sessionType), result, document.getElementById(cardId));
   } catch (err) {
     hideLoading();
-    showManualEntry(err.message);
+    try {
+      showManualEntry(err.message || 'Scan failed — enter details manually.');
+    } catch (e2) {
+      console.error('[LabScan] handleReadLabel error (fallback failed):', err, e2);
+    }
   }
 }
 
