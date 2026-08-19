@@ -175,6 +175,7 @@ const state = {
   activeTemplate: null,
   chemRemovalStaging: {},
   abRemovalStaging: {},
+  histRemovalStaging: {},
   lastScans: [],
   pendingResult: null,
   pendingScan1: null,
@@ -263,6 +264,7 @@ function _onEnter(id) {
     'chemical-scan':         initChemicalScan,
     'chemical-new-details':  initChemicalNewDetails,
     'chemical-reconcile':    renderChemicalReconcile,
+    'histology-reconcile':   renderHistologyReconcile,
     'review-queue':          renderReviewQueue,
     'sheet-view':            renderSheetView,
   };
@@ -320,14 +322,20 @@ function startSession(type) {
     pendingConflict: null,
     pendingAbMatch: null,
     pendingChemMatch: null,
+    pendingHistMatch: null,
     currentStudy: null,
     histologyMode: 'slides',
     activeTemplate: null,
     chemRemovalStaging: {},
     abRemovalStaging: {},
+    histRemovalStaging: {},
   });
   if (type === 'histology') {
-    showScreen('histology-setup');
+    if (state.uploadedRows.length > 0) {
+      _importHistologyFromSheet();
+    } else {
+      showScreen('histology-setup');
+    }
   } else if (type === 'chemical') {
     if (state.uploadedRows.length > 0) {
       _importChemicalsFromSheet();
@@ -360,6 +368,7 @@ async function resumeSessionFromDB() {
     activeTemplate:        session.activeTemplate       || null,
     chemRemovalStaging:    session.chemRemovalStaging   || {},
     abRemovalStaging:      session.abRemovalStaging     || {},
+    histRemovalStaging:    session.histRemovalStaging   || {},
     uploadedHeaders:       session.uploadedHeaders      || [],
     uploadedColMapping:    session.uploadedColMapping   || {},
     uploadedFieldNamesRow: session.uploadedFieldNamesRow || null,
@@ -387,6 +396,7 @@ async function persistSession() {
       activeTemplate:        state.activeTemplate,
       chemRemovalStaging:    state.chemRemovalStaging,
       abRemovalStaging:      state.abRemovalStaging,
+      histRemovalStaging:    state.histRemovalStaging,
       uploadedHeaders:       state.uploadedHeaders,
       uploadedColMapping:    state.uploadedColMapping,
       uploadedFieldNamesRow: state.uploadedFieldNamesRow,
@@ -402,9 +412,9 @@ async function finishSession() {
   Object.assign(state, {
     sessionType: null, sessionId: null, totalScans: 0,
     items: [], reviewQueue: [], lastScans: [],
-    pendingScan1: null, pendingChemFrontScan: null, pendingAbMatch: null, currentStudy: null,
+    pendingScan1: null, pendingChemFrontScan: null, pendingAbMatch: null, pendingHistMatch: null, currentStudy: null,
     histologyMode: 'slides', activeTemplate: null,
-    chemRemovalStaging: {}, abRemovalStaging: {},
+    chemRemovalStaging: {}, abRemovalStaging: {}, histRemovalStaging: {},
   });
   showScreen('home', false);
 }
@@ -758,6 +768,261 @@ async function _importAntibodiesFromSheet() {
   showScreen('antibody-scan');
 }
 
+// ===== HISTOLOGY IMPORT & MATCH =====
+async function _importHistologyFromSheet() {
+  const headers = state.uploadedHeaders;
+  const rows    = state.uploadedRows;
+
+  const colFor = keywords => headers.findIndex(h => {
+    const n = h.toLowerCase().replace(/[\s_\-#.()]/g, '');
+    return keywords.some(k => n.includes(k));
+  });
+
+  const studyIdx     = colFor(['study','studyid','studyno','project','protocol']);
+  const mouseIdx     = colFor(['mouse','mouseid','sample','sampleid','animal','animalid','subject']);
+  const tissueIdx    = colFor(['tissue','organ','site','specimen']);
+  const stainIdx     = colFor(['stain','staintype','dye','ihc','he']);
+  const slideIdx     = colFor(['slide','slideno','slidenumber','section','sectionno']);
+  const blockIdx     = colFor(['block','blockno','blocknumber','paraffin']);
+  const fixIdx       = colFor(['fix','fixative','fixation']);
+  const initialsIdx  = colFor(['initials','initial','by','preparedby','tech']);
+  const dateIdx      = colFor(['date','dated','processeddate','cutdate']);
+  const treatmentIdx = colFor(['treatment','treat','drug','dose']);
+  const groupIdx     = colFor(['group','grp','cohort','arm']);
+  const accessionIdx = colFor(['accession','accessionno','accno','acc']);
+  const expIdx       = colFor(['experiment','experimentid','expid','exp']);
+
+  const hasUsableRows = rows.length > 0 && (mouseIdx !== -1 || accessionIdx !== -1);
+
+  if (hasUsableRows) {
+    await Promise.all(rows.map(row => {
+      const g = i => i !== -1 ? String(row[i] ?? '').trim() : '';
+      const fields = {
+        study_id:     g(studyIdx),
+        mouse_id:     g(mouseIdx),
+        tissue:       g(tissueIdx),
+        stain:        g(stainIdx),
+        slide_no:     g(slideIdx),
+        block_no:     g(blockIdx),
+        fix:          g(fixIdx),
+        initials:     g(initialsIdx),
+        date:         g(dateIdx),
+        treatment:    g(treatmentIdx),
+        group:        g(groupIdx),
+        accession_no: g(accessionIdx),
+        experiment_id: g(expIdx),
+      };
+      const hasKey = fields.mouse_id || fields.accession_no;
+      if (!hasKey) return Promise.resolve();
+      const item = { type: 'histology', sessionId: state.sessionId, fields, status: 'imported', presentConfirmed: false };
+      return addItemToDB(item).then(id => { item.id = id; state.items.push(item); });
+    }));
+    await persistSession();
+  }
+
+  showScreen('histology-setup');
+}
+
+function _histConflicts(scanned, sheet) {
+  const AUDIT = ['stain', 'tissue', 'fix'];
+  return AUDIT.filter(k => {
+    const sv = _norm(scanned[k]);
+    const shv = _norm(sheet[k]);
+    return sv && shv && sv !== shv;
+  });
+}
+
+function _findHistologyMatch(values) {
+  const candidates = state.items.filter(i => i.type === 'histology' && !i.presentConfirmed);
+  if (!candidates.length) return null;
+
+  const accession = _norm(values.accession_no);
+
+  // Pass 1: accession_no match when scanned label has one
+  if (accession) {
+    const hit = candidates.find(i => _norm(i.fields.accession_no) === accession);
+    if (hit) return { match: hit, conflicts: _histConflicts(values, hit.fields) };
+  }
+
+  // Pass 2: composite key — study + mouse_id + slide_no or block_no
+  const vMouse = _norm(values.mouse_id);
+  if (!vMouse) return null;
+
+  const vStudy = _norm(values.study_id || state.currentStudy);
+  const vSlide = _norm(values.slide_no);
+  const vBlock = _norm(values.block_no);
+
+  const hit = candidates.find(i => {
+    const cStudy = _norm(i.fields.study_id || state.currentStudy);
+    if (vStudy && cStudy && vStudy !== cStudy) return false;
+    if (_norm(i.fields.mouse_id) !== vMouse) return false;
+    const cSlide = _norm(i.fields.slide_no);
+    const cBlock = _norm(i.fields.block_no);
+    return (vSlide && cSlide && vSlide === cSlide) || (vBlock && cBlock && vBlock === cBlock);
+  });
+
+  if (hit) return { match: hit, conflicts: _histConflicts(values, hit.fields) };
+  return null;
+}
+
+async function _confirmHistoPresent(matchResult, scannedFields) {
+  const { match, conflicts } = matchResult;
+  const scannedVals = scannedFields || _extractFieldValues(state.pendingResult || {}, 'histology');
+
+  match.presentConfirmed = true;
+  if (match.status === 'imported') match.status = 'confirmed';
+  await updateItemInDB(match);
+  const idx = state.items.findIndex(i => i.id === match.id);
+  if (idx !== -1) state.items[idx] = match;
+  state.totalScans++;
+  state.pendingHistMatch = null;
+  state.pendingResult    = null;
+
+  if (conflicts && conflicts.length > 0) {
+    const summary = conflicts.map(k => {
+      const f = FIELDS.histology.find(fd => fd.key === k);
+      return `${f?.label || k}: sheet "${match.fields[k] || ''}" → scanned "${scannedVals[k] || ''}"`;
+    }).join('; ');
+    state.reviewQueue.push({
+      type: 'histology', reason: 'field_conflict',
+      fields: scannedVals, matchId: match.id,
+      conflictFields: conflicts, conflictSummary: summary, addedAt: Date.now(),
+    });
+    updateReviewBadges();
+  }
+
+  _pushUndo({ id: match.id, displayName: match.fields.mouse_id || match.fields.accession_no || 'Unknown', histMatched: true });
+  await persistSession();
+  showScreen('histology-scan', false);
+}
+
+function _renderHistologyResultCard(result, histMatchResult) {
+  const card       = document.getElementById('histResultCard');
+  const confirmBtn = document.getElementById('histConfirmBtn');
+  const reviewBtn  = document.getElementById('histReviewLaterBtn');
+  const titleEl    = document.querySelector('#screen-histology-result .app-title');
+
+  if (histMatchResult) {
+    const { match, conflicts } = histMatchResult;
+    const hasConflicts = conflicts && conflicts.length > 0;
+    if (titleEl)    titleEl.textContent    = hasConflicts ? 'Field conflict' : 'Match found';
+    if (confirmBtn) confirmBtn.textContent = 'Confirm present';
+    if (reviewBtn)  reviewBtn.textContent  = 'Add as new entry instead';
+
+    const name = esc(match.fields.mouse_id || match.fields.accession_no || '');
+    const meta = [
+      match.fields.accession_no ? `Acc: ${esc(match.fields.accession_no)}` : '',
+      match.fields.slide_no     ? `Slide ${esc(match.fields.slide_no)}`   : '',
+      match.fields.stain        ? esc(match.fields.stain)                  : '',
+    ].filter(Boolean).join(' · ');
+
+    let conflictHtml = '';
+    if (hasConflicts) {
+      const scanVals = _extractFieldValues(result, 'histology');
+      conflictHtml = conflicts.map(k => {
+        const f = FIELDS.histology.find(fd => fd.key === k);
+        return `<p class="chem-match-banner__catalog">${esc(f?.label || k)}: sheet "${esc(match.fields[k] || '')}" → scanned "${esc(scanVals[k] || '')}"</p>`;
+      }).join('');
+    }
+
+    card.innerHTML = `<div class="chem-match-banner">
+      <i class="ti ti-circle-check chem-match-banner__icon"></i>
+      <div class="chem-match-banner__body">
+        <p class="chem-match-banner__label">${hasConflicts ? 'Matched — some fields differ' : 'Matched in your histology sheet'}</p>
+        <p class="chem-match-banner__name">${name}</p>
+        <p class="chem-match-banner__catalog">${meta}</p>
+        ${conflictHtml}
+      </div>
+    </div>`;
+  } else {
+    if (titleEl)    titleEl.textContent    = 'Scan result';
+    if (confirmBtn) confirmBtn.textContent = 'Confirm and add';
+    if (reviewBtn)  reviewBtn.textContent  = 'Review later';
+    renderResultCard(scanFieldsFor('histology'), result, card);
+  }
+}
+
+function _updateHistStatus() {
+  const histItems = state.items.filter(i => i.type === 'histology');
+  const confirmed = histItems.filter(i => i.presentConfirmed).length;
+  const totalEl   = document.getElementById('histTotal');
+  const confEl    = document.getElementById('histConfirmedCount');
+  if (totalEl) totalEl.textContent = `${state.totalScans} scans`;
+  if (confEl)  confEl.textContent  = histItems.length > 0 ? `${confirmed}/${histItems.length} confirmed present` : '';
+}
+
+// ===== HISTOLOGY RECONCILE =====
+function renderHistologyReconcile() {
+  const pending = state.items.filter(i => i.type === 'histology' && !i.presentConfirmed);
+  const list    = document.getElementById('histReconcileList');
+  const empty   = document.getElementById('histReconcileEmpty');
+  if (!pending.length) {
+    if (list)  list.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (empty) empty.classList.add('hidden');
+  list.innerHTML = pending.map(item => {
+    const staged    = state.histRemovalStaging[item.id];
+    const keepCls   = staged === 'keep'   ? 'btn--primary' : 'btn--outline';
+    const removeCls = staged === 'remove' ? 'btn--primary' : 'btn--outline';
+    const name = esc(item.fields.mouse_id || item.fields.accession_no || 'Unknown slide');
+    const meta = [
+      item.fields.study_id    ? esc(item.fields.study_id)               : '',
+      item.fields.slide_no    ? `Slide ${esc(item.fields.slide_no)}`    : '',
+      item.fields.accession_no ? `Acc ${esc(item.fields.accession_no)}` : '',
+      item.fields.stain       ? esc(item.fields.stain)                  : '',
+    ].filter(Boolean).join(' · ');
+    return `<li class="review-item">
+      <div class="review-item__header">
+        <span class="review-item__name">${name}</span>
+      </div>
+      <p class="review-item__meta">${meta}</p>
+      <div class="review-item__actions">
+        <button class="btn ${keepCls}"   onclick="stageHistReconcile(${item.id},'keep')">Still present</button>
+        <button class="btn ${removeCls}" onclick="stageHistReconcile(${item.id},'remove')">Remove</button>
+      </div>
+    </li>`;
+  }).join('');
+}
+
+function stageHistReconcile(id, choice) {
+  state.histRemovalStaging[id] = choice;
+  renderHistologyReconcile();
+}
+
+function stageAllHistReconcile(choice) {
+  state.items.filter(i => i.type === 'histology' && !i.presentConfirmed)
+    .forEach(i => { state.histRemovalStaging[i.id] = choice; });
+  renderHistologyReconcile();
+}
+
+async function applyHistologyReconcile() {
+  const pending  = state.items.filter(i => i.type === 'histology' && !i.presentConfirmed);
+  const unstaged = pending.filter(i => !state.histRemovalStaging[i.id]);
+  if (unstaged.length) {
+    const ok = confirm(`${unstaged.length} slide${unstaged.length !== 1 ? 's' : ''} have no decision yet and will be left unchanged. Proceed?`);
+    if (!ok) return;
+  }
+  for (const item of pending) {
+    const choice = state.histRemovalStaging[item.id];
+    if (choice === 'remove') {
+      await deleteItemFromDB(item.id);
+      const idx = state.items.findIndex(i => i.id === item.id);
+      if (idx !== -1) state.items.splice(idx, 1);
+    } else if (choice === 'keep') {
+      item.presentConfirmed = true;
+      await updateItemInDB(item);
+    }
+  }
+  const total = state.items.filter(i => i.type === 'histology').length;
+  state.histRemovalStaging = {};
+  await persistSession();
+  const metaEl = document.getElementById('endHistMeta');
+  if (metaEl) metaEl.textContent = `${total} slide${total !== 1 ? 's' : ''} on the sheet`;
+  showScreen('end-histology', false);
+}
+
 // ===== HISTOLOGY SCAN =====
 async function initHistologyScan() {
   // Guard: setup must be complete before the scanner runs
@@ -776,7 +1041,7 @@ async function initHistologyScan() {
   const tmplEl = document.getElementById('histStatusTemplate');
   if (tmplEl) tmplEl.textContent = state.activeTemplate.name;
 
-  document.getElementById('histTotal').textContent = `${state.totalScans} scans`;
+  _updateHistStatus();
   renderUndoStrip();
   renderLastScanned();
 
@@ -1417,12 +1682,16 @@ async function handleReadLabel(sessionType) {
 
     state.pendingResult = result;
 
-    const screenMap = { histology: 'histology-result' };
-    const cardMap   = { histology: 'histResultCard' };
-    const screenId  = screenMap[sessionType] || 'box-result';
-    const cardId    = cardMap[sessionType]   || 'boxResultCard';
-    showScreen(screenId);
-    renderResultCard(scanFieldsFor(sessionType), result, document.getElementById(cardId));
+    if (sessionType === 'histology') {
+      const extractedVals   = _extractFieldValues(result, 'histology');
+      const histMatchResult = _findHistologyMatch(extractedVals);
+      state.pendingHistMatch = histMatchResult || null;
+      _renderHistologyResultCard(result, histMatchResult);
+      showScreen('histology-result');
+    } else {
+      showScreen('box-result');
+      renderResultCard(scanFieldsFor(sessionType), result, document.getElementById('boxResultCard'));
+    }
   } catch (err) {
     hideLoading();
     try {
@@ -1704,13 +1973,18 @@ async function confirmAntibodyScan(values) {
 }
 
 async function confirmHistologyScan(values) {
+  const histMatch = _findHistologyMatch(values);
+  if (histMatch) {
+    await _confirmHistoPresent(histMatch, values);
+    return;
+  }
   const conflict = _findConflict('histology', values);
   if (conflict) {
     addToReviewQueue(values, 'conflict');
     showScreen('histology-scan', false);
     return;
   }
-  const item = { type: 'histology', sessionId: state.sessionId, fields: values, status: 'auto' };
+  const item = { type: 'histology', sessionId: state.sessionId, fields: values, status: 'auto', presentConfirmed: true };
   const id   = await addItemToDB(item);
   item.id    = id;
   state.items.push(item);
@@ -1802,6 +2076,21 @@ function renderReviewQueue() {
         </div>
       </li>`;
     }
+    if (item.reason === 'field_conflict') {
+      const name = esc(item.fields?.mouse_id || item.fields?.accession_no || 'Unknown slide');
+      return `<li class="review-item">
+        <div class="review-item__header">
+          <span class="review-item__name">${name}</span>
+          <span class="type-badge type-badge--uncertain">field conflict</span>
+        </div>
+        <p class="review-item__meta">${esc(item.conflictSummary || '')}</p>
+        <div class="review-item__actions">
+          <button class="btn btn--primary" onclick="resolveReviewItem(${i},'keep_scan')">Use scanned values</button>
+          <button class="btn btn--outline" onclick="resolveReviewItem(${i},'keep_sheet')">Keep sheet values</button>
+          <button class="btn btn--ghost"   onclick="resolveReviewItem(${i},'drop')">Drop conflict</button>
+        </div>
+      </li>`;
+    }
     const fields    = FIELDS[item.type] || [];
     const nameField = fields.find(f => f.required) || fields[0];
     const name      = item.fields?.[nameField?.key] || 'Unnamed item';
@@ -1823,7 +2112,16 @@ async function resolveReviewItem(index, action) {
   const item = state.reviewQueue[index];
   if (!item) return;
 
-  if (action === 'confirm_present' && item.reason === 'lot_mismatch') {
+  if (action === 'keep_scan' && item.reason === 'field_conflict') {
+    const matchedItem = state.items.find(i => i.id === item.matchId);
+    if (matchedItem && item.conflictFields) {
+      item.conflictFields.forEach(k => { matchedItem.fields[k] = item.fields[k] || ''; });
+      if (matchedItem.status === 'imported' || matchedItem.status === 'confirmed') matchedItem.status = 'corrected';
+      await updateItemInDB(matchedItem);
+    }
+  } else if (action === 'keep_sheet') {
+    // no-op: sheet values already in the matched item
+  } else if (action === 'confirm_present' && item.reason === 'lot_mismatch') {
     const matchedItem = state.items.find(i => i.id === item.matchId);
     if (matchedItem) {
       matchedItem.presentConfirmed = true;
@@ -1835,7 +2133,7 @@ async function resolveReviewItem(index, action) {
     const dbItem = {
       type: item.type, sessionId: state.sessionId,
       fields: item.fields, status: 'corrected',
-      ...((item.type === 'chemical' || item.type === 'antibody') ? { presentConfirmed: true } : {}),
+      ...((item.type === 'chemical' || item.type === 'antibody' || item.type === 'histology') ? { presentConfirmed: true } : {}),
     };
     const id = await addItemToDB(dbItem);
     dbItem.id = id;
@@ -1873,10 +2171,8 @@ function _pushUndo(scan) {
     _updateChemStatus();
   } else if (state.sessionType === 'antibody') {
     _updateAbStatus();
-  } else {
-    const idMap = { histology: 'histTotal' };
-    const el = document.getElementById(idMap[state.sessionType]);
-    if (el) el.textContent = `${state.totalScans} scans`;
+  } else if (state.sessionType === 'histology') {
+    _updateHistStatus();
   }
   _checkScanCap();
 }
@@ -1907,6 +2203,10 @@ async function undoScan(itemId) {
       item.presentConfirmed = false;
       if (item.status === 'confirmed') item.status = 'imported';
       await updateItemInDB(item);
+    } else if (lastScan?.histMatched && item.type === 'histology') {
+      item.presentConfirmed = false;
+      if (item.status === 'confirmed') item.status = 'imported';
+      await updateItemInDB(item);
     } else {
       state.items.splice(idx, 1);
       await deleteItemFromDB(itemId);
@@ -1920,6 +2220,7 @@ async function undoScan(itemId) {
   renderLastScanned();
   if (state.sessionType === 'chemical') _updateChemStatus();
   else if (state.sessionType === 'antibody') _updateAbStatus();
+  else if (state.sessionType === 'histology') _updateHistStatus();
 }
 
 function renderLastScanned() {
@@ -2424,16 +2725,36 @@ function bindEvents() {
   // Histology result
   document.getElementById('histResultBackBtn').addEventListener('click', goBack);
   document.getElementById('histConfirmBtn').addEventListener('click', async () => {
+    if (state.pendingHistMatch) {
+      await _confirmHistoPresent(state.pendingHistMatch);
+      return;
+    }
     const values = collectResultValues(document.getElementById('histResultCard'));
     await confirmHistologyScan(values);
   });
-  document.getElementById('histReviewLaterBtn').addEventListener('click', () => {
+  document.getElementById('histReviewLaterBtn').addEventListener('click', async () => {
+    if (state.pendingHistMatch) {
+      // "Add as new entry instead" — add the scanned values as a new item, leave the sheet item unconfirmed
+      const vals = _extractFieldValues(state.pendingResult, 'histology');
+      state.pendingHistMatch = null;
+      state.pendingResult    = null;
+      const item = { type: 'histology', sessionId: state.sessionId, fields: vals, status: 'auto', presentConfirmed: true };
+      const id   = await addItemToDB(item);
+      item.id    = id;
+      state.items.push(item);
+      state.totalScans++;
+      _pushUndo({ id, displayName: vals.study_id || vals.mouse_id || 'Unknown' });
+      await persistSession();
+      showScreen('histology-scan', false);
+      return;
+    }
     const card   = document.getElementById('histResultCard');
     const values = collectResultValues(card);
     const reason = card.querySelector('.field-row--unreadable') ? 'unreadable' : 'uncertain';
     addToReviewQueue(values, reason);
     showScreen('histology-scan', false);
   });
+  document.getElementById('endHistBtn').addEventListener('click', () => showScreen('histology-reconcile'));
 
   // Chemical setup
   document.getElementById('startChemicalBtn').addEventListener('click', () => startSession('chemical'));
