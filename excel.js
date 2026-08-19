@@ -222,6 +222,8 @@ function guessFieldFromHeader(header, sessionType) {
       tissue:        ['tissue', 'organ', 'site', 'tissuetype', 'specimen'],
       stain:         ['stain', 'staintype', 'dye', 'ihc', 'he', 'special'],
       slide_no:      ['slide', 'slideno', 'slidenumber', 'section', 'sectionno'],
+      block_no:      ['block', 'blockno', 'blocknumber', 'paraffin', 'paraffinblock'],
+      fix:           ['fix', 'fixative', 'fixation'],
       initials:      ['initials', 'initial', 'by', 'preparedby', 'tech'],
       date:          ['date', 'dated', 'processeddate', 'cutdate'],
       treatment:     ['treatment', 'treat', 'drug', 'dose'],
