@@ -148,6 +148,7 @@
     </header>
     <div class="status-bar">
       <span id="abTotal">0 scans</span>
+      <span id="abConfirmedCount"></span>
     </div>
     <div class="camera-slot" id="abCameraSlot"></div>
     <div class="undo-strip-wrap">
@@ -157,6 +158,7 @@
       <p class="last-scanned__title">Last scanned</p>
       <ul class="last-scanned__list" id="abLastScannedList"></ul>
     </div>
+    <button class="btn btn--ghost btn--full end-box-btn" id="endAbBtn">End session</button>
     <div class="scan-footer">
       <p class="camera-note">For permanent camera access, add this app to your home screen via Safari.</p>
       <button class="scan-type-link" id="abTypeBtn">Can't scan? Type it in</button>
@@ -501,6 +503,42 @@
       <button class="nav-btn nav-btn--active" onclick="showScreen('review-queue')">Review <span class="badge badge--nav" id="reviewBadge4">0</span></button>
       <button class="nav-btn" onclick="showScreen('sheet-view')">Sheet</button>
     </nav>
+  </div>
+
+  <!-- ======== ANTIBODY RECONCILE ======== -->
+  <div class="screen" id="screen-antibody-reconcile">
+    <header class="app-header">
+      <button class="icon-btn" data-back aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+      <h1 class="app-title">Reconcile antibodies</h1>
+    </header>
+    <div class="screen-body">
+      <p class="muted-text" style="margin-bottom:16px">These antibodies were on the sheet but not scanned this session. Decide what to do with each one before finishing.</p>
+      <p class="muted-text hidden" id="abReconcileEmpty">Everything was scanned — nothing to reconcile.</p>
+      <ul class="review-list" id="abReconcileList"></ul>
+      <div class="btn-stack" style="margin-top:16px">
+        <button class="btn btn--outline btn--full" onclick="stageAllAbReconcile('keep')">Mark all remaining as still present</button>
+        <button class="btn btn--outline btn--full" onclick="stageAllAbReconcile('remove')">Remove all remaining</button>
+      </div>
+    </div>
+    <div class="actions-sticky">
+      <button class="btn btn--primary btn--full" id="abApplyBtn" onclick="applyAntibodyReconcile()">Apply &amp; finish</button>
+    </div>
+  </div>
+
+  <!-- ======== END ANTIBODY ======== -->
+  <div class="screen" id="screen-end-antibody">
+    <header class="app-header">
+      <h1 class="app-title">LabScan</h1>
+    </header>
+    <div class="screen-body screen-body--center">
+      <div class="success-check"><i class="ti ti-check"></i></div>
+      <h2 class="success-heading">Reconciliation complete</h2>
+      <p class="success-meta" id="endAbMeta"></p>
+      <div class="btn-stack">
+        <button class="btn btn--primary btn--full" onclick="finishSession()">Finish session</button>
+        <button class="btn btn--ghost btn--full" onclick="showScreen('antibody-scan', false)">Keep scanning</button>
+      </div>
+    </div>
   </div>
 
   <!-- ======== CHEMICAL RECONCILE ======== -->

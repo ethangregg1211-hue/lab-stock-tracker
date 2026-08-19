@@ -9,6 +9,7 @@ const FIELDS = {
     { key: 'concentration',  label: 'Concentration' },
     { key: 'expiry',         label: 'Expiry date',      type: 'date' },
     { key: 'storage',        label: 'Storage condition' },
+    { key: 'vendor',         label: 'Vendor' },
   ],
   histology: [
     { key: 'study_id',       label: 'Study ID',         required: true },
@@ -173,10 +174,12 @@ const state = {
   histologyMode: 'slides',
   activeTemplate: null,
   chemRemovalStaging: {},
+  abRemovalStaging: {},
   lastScans: [],
   pendingResult: null,
   pendingScan1: null,
   pendingConflict: null,
+  pendingAbMatch: null,
   uploadedHeaders: [],
   uploadedRows: [],
   uploadedFileName: '',
@@ -255,6 +258,7 @@ function _onEnter(id) {
     'template-library':      initTemplateLibrary,
     'template-designer':     initTemplateDesigner,
     'antibody-scan':         initAntibodyScan,
+    'antibody-reconcile':    renderAntibodyReconcile,
     'histology-scan':        initHistologyScan,
     'chemical-scan':         initChemicalScan,
     'chemical-new-details':  initChemicalNewDetails,
@@ -314,11 +318,13 @@ function startSession(type) {
     pendingResult: null,
     pendingScan1: null,
     pendingConflict: null,
+    pendingAbMatch: null,
     pendingChemMatch: null,
     currentStudy: null,
     histologyMode: 'slides',
     activeTemplate: null,
     chemRemovalStaging: {},
+    abRemovalStaging: {},
   });
   if (type === 'histology') {
     showScreen('histology-setup');
@@ -327,6 +333,12 @@ function startSession(type) {
       _importChemicalsFromSheet();
     } else {
       showScreen('chemical-scan');
+    }
+  } else if (type === 'antibody') {
+    if (state.uploadedRows.length > 0) {
+      _importAntibodiesFromSheet();
+    } else {
+      showScreen('antibody-scan');
     }
   } else {
     showScreen(SCAN_SCREENS[type]);
@@ -347,6 +359,7 @@ async function resumeSessionFromDB() {
     histologyMode:         session.histologyMode        || 'slides',
     activeTemplate:        session.activeTemplate       || null,
     chemRemovalStaging:    session.chemRemovalStaging   || {},
+    abRemovalStaging:      session.abRemovalStaging     || {},
     uploadedHeaders:       session.uploadedHeaders      || [],
     uploadedColMapping:    session.uploadedColMapping   || {},
     uploadedFieldNamesRow: session.uploadedFieldNamesRow || null,
@@ -373,6 +386,7 @@ async function persistSession() {
       histologyMode:         state.histologyMode,
       activeTemplate:        state.activeTemplate,
       chemRemovalStaging:    state.chemRemovalStaging,
+      abRemovalStaging:      state.abRemovalStaging,
       uploadedHeaders:       state.uploadedHeaders,
       uploadedColMapping:    state.uploadedColMapping,
       uploadedFieldNamesRow: state.uploadedFieldNamesRow,
@@ -388,9 +402,9 @@ async function finishSession() {
   Object.assign(state, {
     sessionType: null, sessionId: null, totalScans: 0,
     items: [], reviewQueue: [], lastScans: [],
-    pendingScan1: null, pendingChemFrontScan: null, currentStudy: null,
+    pendingScan1: null, pendingChemFrontScan: null, pendingAbMatch: null, currentStudy: null,
     histologyMode: 'slides', activeTemplate: null,
-    chemRemovalStaging: {},
+    chemRemovalStaging: {}, abRemovalStaging: {},
   });
   showScreen('home', false);
 }
@@ -685,13 +699,63 @@ function _checkScanCap() {
 
 // ===== ANTIBODY SCAN =====
 async function initAntibodyScan() {
-  document.getElementById('abTotal').textContent = `${state.totalScans} scans`;
+  _updateAbStatus();
   renderUndoStrip();
   renderLastScanned();
   const readBtn = document.getElementById('abReadBtn');
   if (readBtn) readBtn.disabled = true;
   await startCamera('abCameraSlot');
   _checkScanCap();
+}
+
+function _updateAbStatus() {
+  const abItems   = state.items.filter(i => i.type === 'antibody');
+  const confirmed = abItems.filter(i => i.presentConfirmed).length;
+  const totalEl   = document.getElementById('abTotal');
+  const confEl    = document.getElementById('abConfirmedCount');
+  if (totalEl) totalEl.textContent = `${state.totalScans} scans`;
+  if (confEl)  confEl.textContent  = abItems.length > 0 ? `${confirmed}/${abItems.length} confirmed present` : '';
+}
+
+async function _importAntibodiesFromSheet() {
+  const headers = state.uploadedHeaders;
+  const rows    = state.uploadedRows;
+
+  const catIdx     = headers.findIndex(h => /catalog|cat\s*#|cat\s*num/i.test(h));
+  const lotIdx     = headers.findIndex(h => /\blot\b/i.test(h));
+  const targetIdx  = headers.findIndex(h => /target|antigen|specificity/i.test(h));
+  const hostIdx    = headers.findIndex(h => /host.*spec|species.*host|\bhost\b/i.test(h));
+  const cloneIdx   = headers.findIndex(h => /\bclone\b/i.test(h));
+  const concIdx    = headers.findIndex(h => /\bconc|concentration|titer/i.test(h));
+  const expiryIdx  = headers.findIndex(h => /expir|use\s*by/i.test(h));
+  const storageIdx = headers.findIndex(h => /storage|store/i.test(h));
+  const vendorIdx  = headers.findIndex(h => /vendor|supplier|company|manufacturer|brand/i.test(h));
+
+  const mapping = {};
+  if (catIdx     !== -1) mapping[catIdx]     = 'catalog_number';
+  if (lotIdx     !== -1) mapping[lotIdx]     = 'lot_number';
+  if (targetIdx  !== -1) mapping[targetIdx]  = 'target';
+  if (hostIdx    !== -1) mapping[hostIdx]    = 'host_species';
+  if (cloneIdx   !== -1) mapping[cloneIdx]   = 'clone';
+  if (concIdx    !== -1) mapping[concIdx]    = 'concentration';
+  if (expiryIdx  !== -1) mapping[expiryIdx]  = 'expiry';
+  if (storageIdx !== -1) mapping[storageIdx] = 'storage';
+  if (vendorIdx  !== -1) mapping[vendorIdx]  = 'vendor';
+
+  if (catIdx !== -1 && rows.length > 0) {
+    await Promise.all(rows.map(row => {
+      const fields = {};
+      Object.entries(mapping).forEach(([col, key]) => {
+        fields[key] = String(row[parseInt(col)] ?? '').trim();
+      });
+      if (!fields.catalog_number) return Promise.resolve();
+      const item = { type: 'antibody', sessionId: state.sessionId, fields, status: 'imported', presentConfirmed: false };
+      return addItemToDB(item).then(id => { item.id = id; state.items.push(item); });
+    }));
+    await persistSession();
+  }
+
+  showScreen('antibody-scan');
 }
 
 // ===== HISTOLOGY SCAN =====
@@ -844,6 +908,94 @@ function _findChemicalMatch(values) {
   return hit || null;
 }
 
+// ===== ANTIBODY MATCHING =====
+function _findAntibodyMatch(values) {
+  const catalog = _norm(values.catalog_number);
+  if (!catalog) return null;
+
+  const candidates = state.items.filter(i => i.type === 'antibody' && !i.presentConfirmed);
+  if (!candidates.length) return null;
+
+  // Primary: catalog + lot both match exactly
+  const fullMatch = candidates.find(i =>
+    _norm(i.fields.catalog_number) === catalog &&
+    values.lot_number && i.fields.lot_number &&
+    _norm(i.fields.lot_number) === _norm(values.lot_number)
+  );
+  if (fullMatch) return { match: fullMatch, lotMismatch: false };
+
+  // Secondary: catalog matches, lot differs or missing — queue for lot review
+  const catMatch = candidates.find(i => _norm(i.fields.catalog_number) === catalog);
+  if (catMatch) return { match: catMatch, lotMismatch: true };
+
+  return null;
+}
+
+async function _confirmAbPresent(matchResult, scannedFields) {
+  const { match, lotMismatch } = matchResult;
+  const scannedVals = scannedFields || _extractFieldValues(state.pendingResult || {}, 'antibody');
+
+  match.presentConfirmed = true;
+  if (match.status === 'imported') match.status = 'confirmed';
+  await updateItemInDB(match);
+  const idx = state.items.findIndex(i => i.id === match.id);
+  if (idx !== -1) state.items[idx] = match;
+  state.totalScans++;
+  state.pendingAbMatch = null;
+  state.pendingResult  = null;
+
+  if (lotMismatch) {
+    state.reviewQueue.push({
+      type: 'antibody',
+      reason: 'lot_mismatch',
+      fields: scannedVals,
+      matchId: match.id,
+      scannedLot: scannedVals.lot_number || '',
+      sheetLot: match.fields.lot_number || '',
+      addedAt: Date.now(),
+    });
+    updateReviewBadges();
+  }
+
+  _pushUndo({ id: match.id, displayName: match.fields.target || match.fields.catalog_number || 'Unknown', abMatched: true });
+  await persistSession();
+  showScanScreen(false);
+}
+
+function _renderAntibodyResultCard(merged, abMatchResult) {
+  const confirmBtn = document.getElementById('boxConfirmBtn');
+  const reviewBtn  = document.getElementById('boxReviewLaterBtn');
+  const card       = document.getElementById('boxResultCard');
+  const titleEl    = document.querySelector('#screen-box-result .app-title');
+
+  if (abMatchResult) {
+    const { match, lotMismatch } = abMatchResult;
+    if (titleEl)    titleEl.textContent    = lotMismatch ? 'Lot # differs' : 'Match found';
+    if (confirmBtn) confirmBtn.textContent = 'Confirm present';
+    if (reviewBtn)  reviewBtn.textContent  = 'Add as new entry instead';
+
+    const catalog = esc(match.fields.catalog_number || '');
+    const target  = esc(match.fields.target || '');
+    const scanVals = _extractFieldValues(merged, 'antibody');
+    const detail   = lotMismatch
+      ? `<p class="chem-match-banner__catalog">Sheet lot: ${esc(match.fields.lot_number)} — Scanned: ${esc(scanVals.lot_number || '')}</p>`
+      : (catalog ? `<p class="chem-match-banner__catalog">Cat # ${catalog}</p>` : '');
+    card.innerHTML = `<div class="chem-match-banner">
+      <i class="ti ti-circle-check chem-match-banner__icon"></i>
+      <div class="chem-match-banner__body">
+        <p class="chem-match-banner__label">${lotMismatch ? 'Catalog # matched — lot number differs' : 'Matched in your antibody sheet'}</p>
+        <p class="chem-match-banner__name">${target || catalog}</p>
+        ${detail}
+      </div>
+    </div>`;
+  } else {
+    if (titleEl)    titleEl.textContent    = 'New antibody';
+    if (confirmBtn) confirmBtn.textContent = 'Confirm and add';
+    if (reviewBtn)  reviewBtn.textContent  = 'Review later';
+    renderResultCard(FIELDS['antibody'], merged, card);
+  }
+}
+
 async function confirmChemicalScan(values) {
   if (values.catalog_number) values.catalog_number = _stripCatalogSuffix(values.catalog_number);
   const match = _findChemicalMatch(values);
@@ -878,6 +1030,7 @@ function _resetBoxResultForAntibody() {
   if (confirmBtn) confirmBtn.textContent = 'Confirm and add';
   if (reviewBtn)  reviewBtn.textContent  = 'Review later';
   state.pendingChemMatch = null;
+  state.pendingAbMatch   = null;
 }
 
 function _renderChemicalResultCard(result, match) {
@@ -1037,6 +1190,80 @@ async function applyChemicalReconcile() {
   showScreen('end-chemical', false);
 }
 
+// ===== ANTIBODY RECONCILE =====
+function renderAntibodyReconcile() {
+  const pending = state.items.filter(i => i.type === 'antibody' && !i.presentConfirmed);
+  const list    = document.getElementById('abReconcileList');
+  const empty   = document.getElementById('abReconcileEmpty');
+
+  if (!pending.length) {
+    if (list)  list.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (empty) empty.classList.add('hidden');
+
+  list.innerHTML = pending.map(item => {
+    const staged    = state.abRemovalStaging[item.id];
+    const keepCls   = staged === 'keep'   ? 'btn--primary' : 'btn--outline';
+    const removeCls = staged === 'remove' ? 'btn--primary' : 'btn--outline';
+    return `<li class="review-item">
+      <div class="review-item__header">
+        <span class="review-item__name">${esc(item.fields.target || item.fields.catalog_number || 'Unknown antibody')}</span>
+      </div>
+      <p class="review-item__meta">${esc(item.fields.catalog_number || '')}${item.fields.lot_number ? ` · Lot ${esc(item.fields.lot_number)}` : ''}</p>
+      <div class="review-item__actions">
+        <button class="btn ${keepCls}"   onclick="stageAbReconcile(${item.id},'keep')">Still present</button>
+        <button class="btn ${removeCls}" onclick="stageAbReconcile(${item.id},'remove')">Remove</button>
+      </div>
+    </li>`;
+  }).join('');
+}
+
+function stageAbReconcile(id, choice) {
+  state.abRemovalStaging[id] = choice;
+  persistSession();
+  renderAntibodyReconcile();
+}
+
+function stageAllAbReconcile(choice) {
+  state.items
+    .filter(i => i.type === 'antibody' && !i.presentConfirmed)
+    .forEach(i => { state.abRemovalStaging[i.id] = choice; });
+  persistSession();
+  renderAntibodyReconcile();
+}
+
+async function applyAntibodyReconcile() {
+  const pending  = state.items.filter(i => i.type === 'antibody' && !i.presentConfirmed);
+  const unstaged = pending.filter(i => !state.abRemovalStaging[i.id]);
+
+  if (unstaged.length) {
+    const ok = confirm(`${unstaged.length} antibod${unstaged.length !== 1 ? 'ies' : 'y'} have no decision yet and will be left unchanged. Proceed?`);
+    if (!ok) return;
+  }
+
+  for (const item of pending) {
+    const choice = state.abRemovalStaging[item.id];
+    if (choice === 'remove') {
+      await deleteItemFromDB(item.id);
+      const idx = state.items.findIndex(i => i.id === item.id);
+      if (idx !== -1) state.items.splice(idx, 1);
+    } else if (choice === 'keep') {
+      item.presentConfirmed = true;
+      await updateItemInDB(item);
+    }
+  }
+
+  const total = state.items.filter(i => i.type === 'antibody').length;
+  state.abRemovalStaging = {};
+  await persistSession();
+
+  const metaEl = document.getElementById('endAbMeta');
+  if (metaEl) metaEl.textContent = `${total} antibod${total !== 1 ? 'ies' : 'y'} on the sheet`;
+  showScreen('end-antibody', false);
+}
+
 // ===== READ LABEL =====
 function _extractFieldValues(apiResult, sessionType) {
   const allDefs = sessionType === 'histology'
@@ -1091,12 +1318,14 @@ async function handleReadLabel(sessionType) {
         const result2 = await readLabelWithClaude(base64, 'antibody', {});
         _stripQuestionMarks(result2);
         hideLoading();
-        const merged = _mergeScanResults(state.pendingScan1, result2);
+        const merged        = _mergeScanResults(state.pendingScan1, result2);
         state.pendingScan1  = null;
         state.pendingResult = merged;
-        _resetBoxResultForAntibody();
+        const extractedVals = _extractFieldValues(merged, 'antibody');
+        const abMatchResult = _findAntibodyMatch(extractedVals);
+        state.pendingAbMatch = abMatchResult || null;
+        _renderAntibodyResultCard(merged, abMatchResult);
         showScreen('box-result');
-        renderResultCard(FIELDS['antibody'], merged, document.getElementById('boxResultCard'));
       } catch (err) {
         hideLoading();
         showManualEntry(err.message);
@@ -1449,6 +1678,14 @@ function collectResultValues(cardEl) {
 // ===== CONFIRM SCANS =====
 async function confirmAntibodyScan(values) {
   state.pendingScan1 = null;
+
+  // Sheet match (manual entry and review-queue resolves go through here)
+  const abMatchResult = _findAntibodyMatch(values);
+  if (abMatchResult) {
+    await _confirmAbPresent(abMatchResult, values);
+    return;
+  }
+
   const conflict = _findConflict('antibody', values);
   if (conflict) {
     state.pendingConflict = { existing: conflict, incoming: values };
@@ -1456,7 +1693,7 @@ async function confirmAntibodyScan(values) {
     showScreen('antibody-conflict');
     return;
   }
-  const item = { type: 'antibody', sessionId: state.sessionId, fields: values, status: 'auto' };
+  const item = { type: 'antibody', sessionId: state.sessionId, fields: values, status: 'auto', presentConfirmed: true };
   const id   = await addItemToDB(item);
   item.id    = id;
   state.items.push(item);
@@ -1550,6 +1787,21 @@ function renderReviewQueue() {
         </div>
       </li>`;
     }
+    if (item.reason === 'lot_mismatch') {
+      const name = esc(item.fields?.target || item.fields?.catalog_number || 'Unknown antibody');
+      return `<li class="review-item">
+        <div class="review-item__header">
+          <span class="review-item__name">${name}</span>
+          <span class="type-badge type-badge--uncertain">lot mismatch</span>
+        </div>
+        <p class="review-item__meta">Sheet lot: "${esc(item.sheetLot)}" — Scanned: "${esc(item.scannedLot)}"</p>
+        <div class="review-item__actions">
+          <button class="btn btn--primary" onclick="resolveReviewItem(${i},'confirm_present')">Confirm present</button>
+          <button class="btn btn--outline" onclick="resolveReviewItem(${i},'add')">Add as new</button>
+          <button class="btn btn--ghost"   onclick="resolveReviewItem(${i},'drop')">Drop scan</button>
+        </div>
+      </li>`;
+    }
     const fields    = FIELDS[item.type] || [];
     const nameField = fields.find(f => f.required) || fields[0];
     const name      = item.fields?.[nameField?.key] || 'Unnamed item';
@@ -1571,11 +1823,19 @@ async function resolveReviewItem(index, action) {
   const item = state.reviewQueue[index];
   if (!item) return;
 
-  if (action === 'add') {
+  if (action === 'confirm_present' && item.reason === 'lot_mismatch') {
+    const matchedItem = state.items.find(i => i.id === item.matchId);
+    if (matchedItem) {
+      matchedItem.presentConfirmed = true;
+      if (matchedItem.status === 'imported') matchedItem.status = 'confirmed';
+      await updateItemInDB(matchedItem);
+      state.totalScans++;
+    }
+  } else if (action === 'add') {
     const dbItem = {
       type: item.type, sessionId: state.sessionId,
       fields: item.fields, status: 'corrected',
-      ...(item.type === 'chemical' ? { presentConfirmed: true } : {}),
+      ...((item.type === 'chemical' || item.type === 'antibody') ? { presentConfirmed: true } : {}),
     };
     const id = await addItemToDB(dbItem);
     dbItem.id = id;
@@ -1611,8 +1871,10 @@ function _pushUndo(scan) {
   renderLastScanned();
   if (state.sessionType === 'chemical') {
     _updateChemStatus();
+  } else if (state.sessionType === 'antibody') {
+    _updateAbStatus();
   } else {
-    const idMap = { antibody: 'abTotal', histology: 'histTotal' };
+    const idMap = { histology: 'histTotal' };
     const el = document.getElementById(idMap[state.sessionType]);
     if (el) el.textContent = `${state.totalScans} scans`;
   }
@@ -1641,6 +1903,10 @@ async function undoScan(itemId) {
       item.presentConfirmed = false;
       if (item.status === 'confirmed') item.status = 'imported';
       await updateItemInDB(item);
+    } else if (lastScan?.abMatched && item.type === 'antibody') {
+      item.presentConfirmed = false;
+      if (item.status === 'confirmed') item.status = 'imported';
+      await updateItemInDB(item);
     } else {
       state.items.splice(idx, 1);
       await deleteItemFromDB(itemId);
@@ -1653,6 +1919,7 @@ async function undoScan(itemId) {
   renderUndoStrip();
   renderLastScanned();
   if (state.sessionType === 'chemical') _updateChemStatus();
+  else if (state.sessionType === 'antibody') _updateAbStatus();
 }
 
 function renderLastScanned() {
@@ -2041,10 +2308,14 @@ function bindEvents() {
       }
       return;
     }
+    if (state.sessionType === 'antibody' && state.pendingAbMatch) {
+      await _confirmAbPresent(state.pendingAbMatch);
+      return;
+    }
     const values = collectResultValues(document.getElementById('boxResultCard'));
     await confirmAntibodyScan(values);
   });
-  document.getElementById('boxReviewLaterBtn').addEventListener('click', () => {
+  document.getElementById('boxReviewLaterBtn').addEventListener('click', async () => {
     if (state.sessionType === 'chemical') {
       if (state.pendingChemMatch) {
         // "Add as new entry instead" — clear match, go to new-details form
@@ -2063,6 +2334,22 @@ function bindEvents() {
       }
       return;
     }
+    if (state.sessionType === 'antibody' && state.pendingAbMatch) {
+      // "Add as new entry instead" — add scanned as a new antibody, don't confirm sheet item
+      const vals   = _extractFieldValues(state.pendingResult, 'antibody');
+      const abPend = state.pendingAbMatch;
+      state.pendingAbMatch = null;
+      state.pendingResult  = null;
+      const item = { type: 'antibody', sessionId: state.sessionId, fields: vals, status: 'auto', presentConfirmed: true };
+      const id   = await addItemToDB(item);
+      item.id    = id;
+      state.items.push(item);
+      state.totalScans++;
+      _pushUndo({ id, displayName: vals.catalog_number || vals.target || 'Unknown' });
+      await persistSession();
+      showScanScreen(false);
+      return;
+    }
     const card   = document.getElementById('boxResultCard');
     const values = collectResultValues(card);
     const reason = card.querySelector('.field-row--unreadable') ? 'unreadable'
@@ -2075,6 +2362,7 @@ function bindEvents() {
   document.getElementById('abScanBackBtn').addEventListener('click', goBack);
   document.getElementById('abReadBtn').addEventListener('click', () => handleReadLabel('antibody'));
   document.getElementById('abTypeBtn').addEventListener('click', () => showManualEntry('Enter antibody details manually.'));
+  document.getElementById('endAbBtn').addEventListener('click', () => showScreen('antibody-reconcile'));
 
   // Antibody midpoint
   document.getElementById('abMidpointBackBtn').addEventListener('click', () => {
