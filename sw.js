@@ -1,19 +1,25 @@
-const CACHE_NAME = 'labscan-v16';
+const CACHE_NAME = 'labscan-v17';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/camera.js',
-  '/excel.js',
-  '/api.js',
-  '/db.js',
-  '/manifest.json',
+  './',
+  './index.html',
+  './style.css',
+  './app.js',
+  './camera.js',
+  './excel.js',
+  './db.js',
+  './manifest.json',
+  './apple-touch-icon.png',
+  './icon-192.png',
+  './icon-512.png',
+  './favicon-32.png',
+  './favicon-16.png',
 ];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(STATIC_ASSETS))
+      .catch((err) => console.warn('[SW] Precache partial failure:', err))
   );
   self.skipWaiting();
 });

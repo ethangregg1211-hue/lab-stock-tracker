@@ -2,6 +2,25 @@ let _stream = null;
 let _track = null;
 let _torchOn = false;
 
+const _CAM_CONSTRAINTS = [
+  // Preferred: rear camera with resolution hints
+  {
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    },
+    audio: false,
+  },
+  // Fallback 1: rear camera, no resolution hints (iOS sometimes rejects ideal resolution)
+  {
+    video: { facingMode: { ideal: 'environment' } },
+    audio: false,
+  },
+  // Fallback 2: any camera (last resort)
+  { video: true, audio: false },
+];
+
 async function startCamera(slotId) {
   const container = document.getElementById('cameraContainer');
   const slot = document.getElementById(slotId);
@@ -13,16 +32,28 @@ async function startCamera(slotId) {
   // Stop any existing stream before starting a new one
   if (_stream) stopCamera();
 
-  try {
-    _stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
-      audio: false,
-    });
+  let stream = null;
+  for (const constraints of _CAM_CONSTRAINTS) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      break;
+    } catch (err) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        localStorage.setItem('camera_permission', 'denied');
+        console.error('Camera permission denied:', err);
+        return false;
+      }
+      console.warn('Camera constraint set failed, trying simpler:', err);
+    }
+  }
 
+  if (!stream) {
+    console.error('Camera unavailable after all fallbacks');
+    return false;
+  }
+
+  try {
+    _stream = stream;
     const video = document.getElementById('scannerVideo');
     video.srcObject = _stream;
     await video.play();
@@ -36,10 +67,7 @@ async function startCamera(slotId) {
     localStorage.setItem('camera_permission', 'granted');
     return true;
   } catch (err) {
-    console.error('Camera error:', err);
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      localStorage.setItem('camera_permission', 'denied');
-    }
+    console.error('Camera setup error:', err);
     return false;
   }
 }

@@ -2394,18 +2394,20 @@ function _showDownloadActions() {
   if (el) el.classList.remove('hidden');
 }
 
-// Primary download — uses triggerDownload (from excel.js), falls back to data URI
-function _runDownload(blob, filename) {
-  try {
-    triggerDownload(blob, filename);
-    _showDownloadActions();
-  } catch(e) {
-    // triggerDownload unavailable — navigate via data URI (iOS "Open in…" sheet)
-    const reader = new FileReader();
-    reader.onload = () => { window.location.href = reader.result; };
-    reader.readAsDataURL(blob);
-    _showDownloadActions();
+// Share or download — uses Web Share API (native iOS share sheet) when available, falls back to <a download>
+async function _shareOrDownload(blob, filename) {
+  const file = new File([blob], filename, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ title: filename, files: [file] });
+      _showDownloadActions();
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // user dismissed share sheet
+    }
   }
+  triggerDownload(blob, filename);
+  _showDownloadActions();
 }
 
 // "Can't download? Tap here to open file" handler
@@ -2427,29 +2429,12 @@ function _openExcelFallback() {
   }
 }
 
-// "Email sheet to myself" — Web Share API with file (works on iOS), mailto fallback
+// "Share sheet" — delegates to _shareOrDownload (Web Share → <a download>)
 async function _emailSheet() {
   const blob = _lastExcelBlob || _buildDownloadBlob();
   if (!blob) return;
   const filename = _lastExcelFilename || `labscan-${new Date().toISOString().slice(0,10)}.xlsx`;
-  const file = new File([blob], filename, { type: blob.type });
-
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ title: 'Lab Sheet', files: [file] });
-      return;
-    } catch(e) {
-      if (e.name === 'AbortError') return;
-    }
-  }
-
-  // Fallback: mailto with plain-text summary in body (file attachment via mailto is not supported by browsers)
-  const lines = state.items
-    .filter(i => !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? '')))
-    .map(i => [i.fields?.chemical_description, i.fields?.catalog_number].filter(Boolean).join('\t'))
-    .filter(Boolean);
-  const body = `Lab inventory (${lines.length} items):\n\n${lines.join('\n')}`;
-  window.location.href = `mailto:?subject=${encodeURIComponent('Lab Sheet — ' + filename)}&body=${encodeURIComponent(body)}`;
+  await _shareOrDownload(blob, filename);
 }
 
 // "Copy data as text" — copies chemical names + catalog numbers to clipboard
@@ -2785,7 +2770,7 @@ function bindEvents() {
 
   // Sheet view
   document.getElementById('sheetSearch').addEventListener('input', renderSheetView);
-  document.getElementById('downloadBtn').addEventListener('click', () => {
+  document.getElementById('downloadBtn').addEventListener('click', async () => {
     const errEl = document.getElementById('downloadError');
     if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
 
@@ -2796,7 +2781,7 @@ function bindEvents() {
 
     const blob = _buildDownloadBlob();
     if (!blob) return;
-    _runDownload(blob, _lastExcelFilename);
+    await _shareOrDownload(blob, _lastExcelFilename);
   });
 
   document.getElementById('emailSheetBtn').addEventListener('click', _emailSheet);
