@@ -181,6 +181,7 @@ const state = {
   pendingScan1: null,
   pendingConflict: null,
   pendingAbMatch: null,
+  pendingHistMatch: null,
   uploadedHeaders: [],
   uploadedRows: [],
   uploadedFileName: '',
@@ -2140,14 +2141,16 @@ async function resolveReviewItem(index, action) {
     state.items.push(dbItem);
     state.totalScans++;
   } else if (action === 'use_session_study') {
-    const dbItem = { type: item.type, sessionId: state.sessionId, fields: item.fields, status: 'corrected' };
+    const dbItem = { type: item.type, sessionId: state.sessionId, fields: item.fields, status: 'corrected',
+      ...(item.type === 'histology' ? { presentConfirmed: true } : {}) };
     const id = await addItemToDB(dbItem);
     dbItem.id = id;
     state.items.push(dbItem);
     state.totalScans++;
   } else if (action === 'use_label_study') {
     const fields = { ...item.fields, study_id: item.studyFound };
-    const dbItem = { type: item.type, sessionId: state.sessionId, fields, status: 'corrected' };
+    const dbItem = { type: item.type, sessionId: state.sessionId, fields, status: 'corrected',
+      ...(item.type === 'histology' ? { presentConfirmed: true } : {}) };
     const id = await addItemToDB(dbItem);
     dbItem.id = id;
     state.items.push(dbItem);
@@ -2338,7 +2341,7 @@ async function _importChemicalsFromSheet() {
       if (CHEM_INTERNAL_FIELD_NAMES.has(fields.chemical_description)) return Promise.resolve();
       const originalRow = Array.from({ length: headers.length }, (_, i) => row[i] ?? '');
       const item = {
-        type: 'chemical', sessionId: state.sessionId, fields, status: 'imported',
+        type: 'chemical', sessionId: state.sessionId, fields, status: 'imported', presentConfirmed: false,
         originalRowIndex: rowIndex, originalRow,
       };
       return addItemToDB(item).then(id => { item.id = id; state.items.push(item); });
@@ -2381,7 +2384,7 @@ function _buildDownloadBlob() {
     filename = `chemical-import-${date}.xlsx`;
   } else {
     wb = exportToExcel(state.items, state.sessionType);
-    filename = `labscan-${date}.xlsx`;
+    filename = `${state.sessionType}-${date}.xlsx`;
   }
   if (!wb) return null;
   _lastExcelFilename = filename;
@@ -2437,23 +2440,33 @@ async function _emailSheet() {
   await _shareOrDownload(blob, filename);
 }
 
-// "Copy data as text" — copies chemical names + catalog numbers to clipboard
+// "Copy data as text" — copies key fields as tab-separated text, per session type
 function _copyDataAsText() {
-  const items = state.items.filter(i =>
-    !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? ''))
-  );
-  const lines = items.map(i => {
-    const name = i.fields?.chemical_description || '';
-    const cat  = i.fields?.catalog_number || '';
-    return [name, cat].filter(Boolean).join('\t');
-  }).filter(Boolean);
+  const type = state.sessionType;
+  let lines;
+
+  if (type === 'chemical') {
+    lines = state.items
+      .filter(i => !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? '')))
+      .map(i => [i.fields?.chemical_description, i.fields?.catalog_number].filter(Boolean).join('\t'))
+      .filter(Boolean);
+  } else if (type === 'antibody') {
+    lines = state.items
+      .map(i => [i.fields?.target, i.fields?.catalog_number, i.fields?.lot_number].filter(Boolean).join('\t'))
+      .filter(Boolean);
+  } else if (type === 'histology') {
+    lines = state.items
+      .map(i => [i.fields?.study_id, i.fields?.mouse_id, i.fields?.accession_no, i.fields?.tissue, i.fields?.stain].filter(Boolean).join('\t'))
+      .filter(Boolean);
+  } else {
+    lines = [];
+  }
 
   const text = lines.join('\n');
   navigator.clipboard.writeText(text).then(() => {
     const el = document.getElementById('copySuccess');
     if (el) { el.classList.remove('hidden'); setTimeout(() => el.classList.add('hidden'), 2500); }
   }).catch(() => {
-    // Clipboard API blocked — show raw text fallback
     const errEl = document.getElementById('downloadError');
     if (errEl) { errEl.textContent = 'Copy failed — clipboard access denied.'; errEl.classList.remove('hidden'); }
   });

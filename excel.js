@@ -35,8 +35,9 @@ function exportToExcel(items, sessionType, filename) {
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...wsRows]);
 
-  // Apply row fill: yellow for auto-added (#FFEFC0), orange for corrected (#FFD9B3)
+  // Apply row fill: yellow for new scans, orange for corrected. Skip sheet-origin rows.
   items.forEach((item, i) => {
+    if (item.status === 'imported' || item.status === 'confirmed') return;
     const rowIdx = i + 1; // 0 = header
     const rgb = item.status === 'corrected' ? 'FFCC80' : 'FFE082';
     const fill = { patternType: 'solid', fgColor: { rgb } };
