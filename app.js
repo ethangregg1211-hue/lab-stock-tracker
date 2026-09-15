@@ -182,6 +182,7 @@ const state = {
   pendingConflict: null,
   pendingAbMatch: null,
   pendingHistMatch: null,
+  pendingStudyMismatch: null,
   uploadedHeaders: [],
   uploadedRows: [],
   uploadedFileName: '',
@@ -329,6 +330,7 @@ function startSession(type) {
     pendingAbMatch: null,
     pendingChemMatch: null,
     pendingHistMatch: null,
+    pendingStudyMismatch: null,
     currentStudy: null,
     histologyMode: 'slides',
     activeTemplate: null,
@@ -420,7 +422,7 @@ async function finishSession() {
   Object.assign(state, {
     sessionType: null, sessionId: null, totalScans: 0,
     items: [], reviewQueue: [], lastScans: [],
-    pendingScan1: null, pendingChemFrontScan: null, pendingAbMatch: null, pendingHistMatch: null, currentStudy: null,
+    pendingScan1: null, pendingChemFrontScan: null, pendingAbMatch: null, pendingHistMatch: null, pendingStudyMismatch: null, currentStudy: null,
     histologyMode: 'slides', activeTemplate: null,
     chemRemovalStaging: {}, abRemovalStaging: {}, histRemovalStaging: {},
   });
@@ -883,8 +885,9 @@ async function _confirmHistoPresent(matchResult, scannedFields) {
   const idx = state.items.findIndex(i => i.id === match.id);
   if (idx !== -1) state.items[idx] = match;
   state.totalScans++;
-  state.pendingHistMatch = null;
-  state.pendingResult    = null;
+  state.pendingHistMatch     = null;
+  state.pendingResult        = null;
+  state.pendingStudyMismatch = null;
 
   if (conflicts && conflicts.length > 0) {
     const summary = conflicts.map(k => {
@@ -910,6 +913,16 @@ function _renderHistologyResultCard(result, histMatchResult) {
   const reviewBtn  = document.getElementById('histReviewLaterBtn');
   const titleEl    = document.querySelector('#screen-histology-result .app-title');
 
+  const mismatch = state.pendingStudyMismatch;
+  const mismatchBannerHtml = mismatch ? `<div class="study-mismatch-banner">
+    <p class="study-mismatch-banner__msg">Study ID mismatch &mdash; session is <strong>${esc(mismatch.sessionId)}</strong> but label shows <strong>${esc(mismatch.labelId)}</strong>. Which should be used?</p>
+    <div class="study-mismatch-banner__actions">
+      <button class="btn btn--sm" style="background:#fde047;color:#713f12;border:none" onclick="_resolveStudyMismatch('session')">Use session ID (${esc(mismatch.sessionId)})</button>
+      <button class="btn btn--outline btn--sm" onclick="_resolveStudyMismatch('label')">Use label ID (${esc(mismatch.labelId)})</button>
+      <button class="btn btn--ghost btn--sm" onclick="_resolveStudyMismatch('review')">Review later</button>
+    </div>
+  </div>` : '';
+
   if (histMatchResult) {
     const { match, conflicts } = histMatchResult;
     const hasConflicts = conflicts && conflicts.length > 0;
@@ -933,7 +946,7 @@ function _renderHistologyResultCard(result, histMatchResult) {
       }).join('');
     }
 
-    card.innerHTML = `<div class="chem-match-banner">
+    card.innerHTML = mismatchBannerHtml + `<div class="chem-match-banner">
       <i class="ti ti-circle-check chem-match-banner__icon"></i>
       <div class="chem-match-banner__body">
         <p class="chem-match-banner__label">${hasConflicts ? 'Matched — some fields differ' : 'Matched in your histology sheet'}</p>
@@ -946,7 +959,38 @@ function _renderHistologyResultCard(result, histMatchResult) {
     if (titleEl)    titleEl.textContent    = 'Scan result';
     if (confirmBtn) confirmBtn.textContent = 'Confirm and add';
     if (reviewBtn)  reviewBtn.textContent  = 'Review later';
+    card.innerHTML = mismatchBannerHtml;
     renderResultCard(scanFieldsFor('histology'), result, card);
+  }
+}
+
+async function _resolveStudyMismatch(choice) {
+  const mismatch = state.pendingStudyMismatch;
+  if (!mismatch) return;
+  if (choice === 'session') {
+    state.pendingStudyMismatch = null;
+    _renderHistologyResultCard(state.pendingResult, state.pendingHistMatch);
+  } else if (choice === 'label') {
+    state.pendingStudyMismatch = null;
+    if (state.pendingResult) {
+      state.pendingResult.study_id = { value: mismatch.labelId, confidence: 'high' };
+    }
+    _renderHistologyResultCard(state.pendingResult, state.pendingHistMatch);
+  } else if (choice === 'review') {
+    const fields = _extractFieldValues(state.pendingResult || {}, 'histology');
+    fields.study_id = mismatch.sessionId;
+    state.reviewQueue.push({
+      type: 'histology', reason: 'study_mismatch',
+      fields,
+      studyFound: mismatch.labelId, studySession: mismatch.sessionId,
+      addedAt: Date.now(),
+    });
+    state.pendingStudyMismatch = null;
+    state.pendingResult        = null;
+    state.pendingHistMatch     = null;
+    updateReviewBadges();
+    await persistSession();
+    showScanScreen(false);
   }
 }
 
@@ -1071,6 +1115,11 @@ async function initChemicalScan() {
   if (readBtn) readBtn.disabled = true;
   await startCamera('chemCameraSlot');
   _checkScanCap();
+}
+
+function _sameStudyId(a, b) {
+  const norm = s => String(s || '').toLowerCase().replace(/[\s\-]/g, '');
+  return norm(a) === norm(b);
 }
 
 function _getChemScanMode() {
@@ -1633,24 +1682,18 @@ async function handleReadLabel(sessionType) {
     }
 
     // Study ID handling for histology
-    if (sessionType === 'histology' && state.currentStudy) {
-      if (result.study_mismatch === true && result.study_id_found) {
-        const fields = _extractFieldValues(result, 'histology');
-        fields.study_id = state.currentStudy;
-        state.reviewQueue.push({
-          type: 'histology',
-          reason: 'study_mismatch',
-          fields,
-          studyFound:   String(result.study_id_found),
-          studySession: state.currentStudy,
-          addedAt: Date.now(),
-        });
-        updateReviewBadges();
-        await persistSession();
-        showScanScreen(false);
-        return;
+    if (sessionType === 'histology') {
+      const rawLabelStudy = typeof result.label_study_id === 'string'
+        ? result.label_study_id
+        : (result.label_study_id?.value || '');
+      if (state.currentStudy && rawLabelStudy && !_sameStudyId(rawLabelStudy, state.currentStudy)) {
+        state.pendingStudyMismatch = { sessionId: state.currentStudy, labelId: rawLabelStudy };
+      } else {
+        state.pendingStudyMismatch = null;
       }
-      result.study_id = { value: state.currentStudy, confidence: 'locked' };
+      if (state.currentStudy) {
+        result.study_id = { value: state.currentStudy, confidence: 'locked' };
+      }
     }
 
     // Chemical: strip catalog suffix, default physical_state, front/back or single-shot
@@ -2004,6 +2047,7 @@ async function confirmHistologyScan(values) {
   item.id    = id;
   state.items.push(item);
   state.totalScans++;
+  state.pendingStudyMismatch = null;
   _pushUndo({ id, displayName: values.study_id || values.mouse_id || 'Unknown' });
   await persistSession();
   showScreen('histology-scan', false);
@@ -2068,11 +2112,11 @@ function renderReviewQueue() {
           <span class="review-item__name">${esc(name)}</span>
           <span class="type-badge type-badge--uncertain">study mismatch</span>
         </div>
-        <p class="review-item__meta">Session: "${esc(item.studySession)}" — Label reads: "${esc(item.studyFound)}"</p>
+        <p class="review-item__meta">Session: ${esc(item.studySession)} / Label: ${esc(item.studyFound)}</p>
         <div class="review-item__actions">
-          <button class="btn btn--primary" onclick="resolveReviewItem(${i},'use_session_study')">Use session ID</button>
-          <button class="btn btn--outline" onclick="resolveReviewItem(${i},'use_label_study')">Use label ID</button>
-          <button class="btn btn--ghost"   onclick="resolveReviewItem(${i},'drop')">Drop scan</button>
+          <button class="btn btn--primary" onclick="resolveReviewItem(${i},'use_session_study')">Use session ID (${esc(item.studySession)})</button>
+          <button class="btn btn--outline" onclick="resolveReviewItem(${i},'use_label_study')">Use label ID (${esc(item.studyFound)})</button>
+          <button class="btn btn--ghost"   onclick="resolveReviewItem(${i},'drop')">Drop this scan</button>
         </div>
       </li>`;
     }

@@ -1208,6 +1208,25 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
 .slide-zone--filled:active { background: var(--red-bg); border-color: var(--red); color: var(--red); }
 
 /* ===== CHEMICAL MATCH BANNER ===== */
+.study-mismatch-banner {
+  background: #fef9c3;
+  border: 1.5px solid #fde047;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.study-mismatch-banner__msg {
+  font-size: 14px;
+  color: #713f12;
+  margin: 0 0 10px;
+  line-height: 1.4;
+}
+.study-mismatch-banner__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .chem-match-banner {
   display: flex;
   align-items: flex-start;
