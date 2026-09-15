@@ -443,7 +443,13 @@ function _addRecentStudyID(id) {
 
 function initHistologySetup() {
   const input = document.getElementById('histStudyIdInput');
-  if (input) input.value = state.currentStudy || '';
+  const savedStudyId = sessionStorage.getItem('labscan_pending_study_id');
+  if (savedStudyId !== null) {
+    if (input) input.value = savedStudyId;
+    sessionStorage.removeItem('labscan_pending_study_id');
+  } else {
+    if (input) input.value = state.currentStudy || '';
+  }
 
   // Recent study IDs
   const recent  = _getRecentStudyIDs();
@@ -574,12 +580,14 @@ function openTemplateEditor(templateId) {
   const templates = _getTemplates();
   const template  = templates.find(t => t.id === templateId);
   if (!template) return;
+  sessionStorage.setItem('labscan_pending_study_id', document.getElementById('histStudyIdInput')?.value || '');
   _designer.template    = JSON.parse(JSON.stringify(template));
   _designer.selectedKey = null;
   showScreen('template-designer');
 }
 
 function newTemplate() {
+  sessionStorage.setItem('labscan_pending_study_id', document.getElementById('histStudyIdInput')?.value || '');
   _designer.template    = _freshDesignerTemplate();
   _designer.selectedKey = null;
   showScreen('template-designer');
