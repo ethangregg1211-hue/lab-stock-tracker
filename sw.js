@@ -1,10 +1,8 @@
-// Bump CACHE_NAME only when icons or manifest change.
-// Code files (JS/CSS/HTML) use network-first, so they update on every reload
-// without requiring a version bump here.
-const CACHE_NAME = 'labscan-v18';
+// Bump CACHE_NAME when icons or manifest change.
+// Code files use network-first and update on every reload without a version bump.
+const CACHE_NAME = 'labscan-v19';
 
-// Only truly static assets are precached — icons and manifest rarely change.
-// api.js and config.js are gitignored and must NOT be listed here.
+// Only icons and manifest are precached — api.js and config.js are gitignored.
 const PRECACHE_ASSETS = [
   './manifest.json',
   './apple-touch-icon.png',
@@ -20,18 +18,15 @@ self.addEventListener('install', (e) => {
       .then((cache) => cache.addAll(PRECACHE_ASSETS))
       .catch((err) => console.warn('[SW] Precache partial failure:', err))
   );
-  // Activate immediately — don't wait for existing tabs to close.
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
-  // Delete every cache that isn't the current version.
   e.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
     )
   );
-  // Take control of already-open tabs right away.
   self.clients.claim();
 });
 
@@ -40,12 +35,26 @@ self.addEventListener('fetch', (e) => {
 
   const url = new URL(e.request.url);
 
-  // Don't intercept cross-origin requests (CDN libs — SheetJS, Tabler icons —
-  // and the Claude API endpoint).
+  // Don't intercept cross-origin requests (CDN libs, Claude API).
   if (url.origin !== self.location.origin) return;
 
-  // Icons and manifest: cache-first (safe because they change rarely and only
-  // when CACHE_NAME is bumped anyway, which clears the old cache).
+  // Navigation requests (home screen launch, page reload):
+  // Try network first; fall back to cached index.html so the app loads offline.
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            caches.open(CACHE_NAME).then((c) => c.put(e.request, response.clone()));
+          }
+          return response;
+        })
+        .catch(() => caches.match('./index.html') || caches.match('./'))
+    );
+    return;
+  }
+
+  // Icons and manifest: cache-first.
   if (
     url.pathname.match(/\.(png|ico|jpg|jpeg|svg|webp)$/) ||
     url.pathname.endsWith('manifest.json')
@@ -64,8 +73,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Everything else (index.html, style.css, app.js, camera.js, excel.js, db.js):
-  // network-first so code changes show up on next reload, with cache as offline fallback.
+  // Everything else (JS, CSS): network-first so code changes show on next reload.
   e.respondWith(
     fetch(e.request)
       .then((response) => {

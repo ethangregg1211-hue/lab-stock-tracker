@@ -3,6 +3,7 @@
   "short_name": "LabScan",
   "description": "Track and manage lab inventory from your phone",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#2563eb",

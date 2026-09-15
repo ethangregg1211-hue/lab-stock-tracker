@@ -185,6 +185,7 @@ const state = {
   uploadedHeaders: [],
   uploadedRows: [],
   uploadedFileName: '',
+  uploadedSheetIsBlank: false, // true when uploaded file had no usable headers
   uploadedColMapping: {},      // colIndex → fieldKey, built during import
   uploadedFieldNamesRow: null, // raw row 2 of the university template (preserved for export)
   pendingChemFrontScan: null,  // front-photo result when in front/back scan mode
@@ -289,23 +290,27 @@ function initHome() {
 }
 
 function updateHomeUploadCard() {
-  const hasFile  = state.uploadedHeaders.length > 0;
-  const emptyEl   = document.getElementById('uploadEmptyState');
-  const loadedEl  = document.getElementById('uploadLoadedState');
-  const fileNameEl = document.getElementById('uploadedFileNameHome');
+  const hasFile         = state.uploadedHeaders.length > 0;
+  const hasFileOrBlank  = hasFile || state.uploadedSheetIsBlank;
+  const emptyEl         = document.getElementById('uploadEmptyState');
+  const loadedEl        = document.getElementById('uploadLoadedState');
+  const fileNameEl      = document.getElementById('uploadedFileNameHome');
+  const blankMsgEl      = document.getElementById('uploadBlankMsg');
 
-  if (hasFile) {
+  if (hasFileOrBlank) {
     if (emptyEl)    emptyEl.classList.add('hidden');
     if (loadedEl)   loadedEl.classList.remove('hidden');
     if (fileNameEl) fileNameEl.textContent = state.uploadedFileName || 'File loaded';
+    if (blankMsgEl) blankMsgEl.classList.toggle('hidden', !state.uploadedSheetIsBlank);
   } else {
     if (emptyEl)    emptyEl.classList.remove('hidden');
     if (loadedEl)   loadedEl.classList.add('hidden');
+    if (blankMsgEl) blankMsgEl.classList.add('hidden');
   }
 
   ['startAntibodyBtn', 'startHistologyBtn', 'startChemicalBtn'].forEach(id => {
     const btn = document.getElementById(id);
-    if (btn) btn.disabled = !hasFile;
+    if (btn) btn.disabled = !hasFileOrBlank;
   });
 }
 
@@ -370,8 +375,9 @@ async function resumeSessionFromDB() {
     chemRemovalStaging:    session.chemRemovalStaging   || {},
     abRemovalStaging:      session.abRemovalStaging     || {},
     histRemovalStaging:    session.histRemovalStaging   || {},
-    uploadedHeaders:       session.uploadedHeaders      || [],
-    uploadedColMapping:    session.uploadedColMapping   || {},
+    uploadedHeaders:       session.uploadedHeaders       || [],
+    uploadedSheetIsBlank:  session.uploadedSheetIsBlank  || false,
+    uploadedColMapping:    session.uploadedColMapping    || {},
     uploadedFieldNamesRow: session.uploadedFieldNamesRow || null,
   });
   document.getElementById('resumeCard').classList.add('hidden');
@@ -399,6 +405,7 @@ async function persistSession() {
       abRemovalStaging:      state.abRemovalStaging,
       histRemovalStaging:    state.histRemovalStaging,
       uploadedHeaders:       state.uploadedHeaders,
+      uploadedSheetIsBlank:  state.uploadedSheetIsBlank,
       uploadedColMapping:    state.uploadedColMapping,
       uploadedFieldNamesRow: state.uploadedFieldNamesRow,
     });
@@ -1102,6 +1109,7 @@ function _clearChemFrontScan() {
   state.pendingChemFrontScan = null;
   const el = document.getElementById('chemFrontResult');
   if (el) el.classList.add('hidden');
+  document.getElementById('screen-chemical-scan')?.classList.remove('has-front-result');
   _updateChemReadBtn();
 }
 
@@ -1132,6 +1140,7 @@ function _renderChemFrontResult(result) {
 
   document.getElementById('chemFrontFound').innerHTML = html;
   document.getElementById('chemFrontResult').classList.remove('hidden');
+  document.getElementById('screen-chemical-scan')?.classList.add('has-front-result');
 }
 
 function _updateChemStatus() {
@@ -1359,8 +1368,7 @@ function initChemicalNewDetails() {
 
 async function confirmChemicalNew() {
   const scanned = state.pendingResult || {};
-  const fields = {
-    ...scanned,
+  const formOverrides = {
     receipt_quantity: document.getElementById('chemNewContainers').value.trim(),
     unit:             document.getElementById('chemNewAmount').value.trim(),
     chemical_unit:    document.getElementById('chemNewUnit').value.trim(),
@@ -1368,10 +1376,16 @@ async function confirmChemicalNew() {
     storage_location: document.getElementById('chemNewLocation').value.trim(),
     storage_device:   document.getElementById('chemNewDevice').value.trim(),
   };
+  const fields = { ...scanned, ...formOverrides };
 
   if (!fields.chemical_description) { alert('Chemical Name is required.'); return; }
 
-  const item = { type: 'chemical', sessionId: state.sessionId, fields, status: 'auto', presentConfirmed: true };
+  // Track which form fields differ from what the scan returned (= user corrections)
+  const correctedFields = Object.entries(formOverrides)
+    .filter(([key, val]) => val !== (scanned[key] || ''))
+    .map(([key]) => key);
+
+  const item = { type: 'chemical', sessionId: state.sessionId, fields, status: 'auto', presentConfirmed: true, correctedFields };
   const id   = await addItemToDB(item);
   item.id    = id;
   state.items.push(item);
@@ -2366,7 +2380,9 @@ function _buildDownloadBlob() {
   const date = new Date().toISOString().slice(0, 10);
   let wb, filename;
   if (state.sessionType === 'chemical') {
-    const chemItems = state.items.filter(i => i.type === 'chemical');
+    const chemItems = state.items
+      .filter(i => i.type === 'chemical')
+      .filter(i => !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? '')));
     if (state.uploadedHeaders.length > 0) {
       // Preserve original file structure: same columns, original data, only new rows highlighted
       wb = exportChemicalFromOriginal(
@@ -2376,10 +2392,8 @@ function _buildDownloadBlob() {
         state.uploadedFieldNamesRow
       );
     } else {
-      // No uploaded file — fall back to the university template format
-      wb = exportChemicalTemplate(
-        chemItems.filter(i => !CHEM_INTERNAL_FIELD_NAMES.has(String(i.fields?.chemical_description ?? '')))
-      );
+      // No uploaded file or blank sheet — use concise 16-column lab format
+      wb = exportChemicalSimple(chemItems);
     }
     filename = `chemical-import-${date}.xlsx`;
   } else {
@@ -2518,11 +2532,19 @@ function bindEvents() {
       document.getElementById('settingsDrawer').classList.add('hidden')
     )
   );
-  document.getElementById('saveApiKeyBtn').addEventListener('click', () => {
+  document.getElementById('apiKeyToggleBtn').addEventListener('click', () => {
+    const inp = document.getElementById('apiKeyInput');
+    const btn = document.getElementById('apiKeyToggleBtn');
+    if (inp.type === 'password') { inp.type = 'text'; btn.textContent = 'Hide'; }
+    else { inp.type = 'password'; btn.textContent = 'Show'; }
+  });
+
+  document.getElementById('saveApiKeyBtn').addEventListener('click', async () => {
     const raw = document.getElementById('apiKeyInput').value;
     const k   = (typeof cleanApiKey === 'function') ? cleanApiKey(raw) : raw.trim();
+    if (!k) { alert('Please enter an API key.'); return; }
     console.log('[LabScan] Saving API key to localStorage, length:', k.length);
-    if (k) localStorage.setItem('anthropic_api_key', k);
+    localStorage.setItem('anthropic_api_key', k);
     const chemFields = {
       labscan_pi_code:      'chemPiCode',
       labscan_pi_lastname:  'chemPiLast',
@@ -2534,7 +2556,38 @@ function bindEvents() {
       const v = document.getElementById(elId).value.trim();
       if (v) localStorage.setItem(lsKey, v);
     });
-    document.getElementById('settingsDrawer').classList.add('hidden');
+
+    const statusEl = document.getElementById('apiKeyStatus');
+    if (statusEl) {
+      statusEl.textContent = 'Verifying key…';
+      statusEl.className = 'api-key-status api-key-status--pending';
+      statusEl.classList.remove('hidden');
+    }
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': k,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'Hi' }],
+        }),
+      });
+      if (res.ok) {
+        if (statusEl) { statusEl.textContent = 'API key saved and working ✓'; statusEl.className = 'api-key-status api-key-status--ok'; }
+      } else if (res.status === 401 || res.status === 403) {
+        if (statusEl) { statusEl.textContent = 'API key invalid — check it is correct'; statusEl.className = 'api-key-status api-key-status--error'; }
+      } else {
+        if (statusEl) { statusEl.textContent = 'Saved — could not verify (check network)'; statusEl.className = 'api-key-status api-key-status--warn'; }
+      }
+    } catch {
+      if (statusEl) { statusEl.textContent = 'Saved — offline, could not verify'; statusEl.className = 'api-key-status api-key-status--warn'; }
+    }
   });
 
   // Session type buttons
@@ -2583,9 +2636,16 @@ function bindEvents() {
     try {
       const { headers, rows } = await readExcelFile(file);
       hideLoading();
-      state.uploadedHeaders  = headers;
-      state.uploadedRows     = rows;
-      state.uploadedFileName = file.name;
+      const isBlank = headers.length === 0 || headers.every(h => !String(h).trim());
+      state.uploadedFileName    = file.name;
+      state.uploadedSheetIsBlank = isBlank;
+      if (isBlank) {
+        state.uploadedHeaders = [];
+        state.uploadedRows    = [];
+      } else {
+        state.uploadedHeaders = headers;
+        state.uploadedRows    = rows;
+      }
       updateHomeUploadCard();
     } catch (err) {
       hideLoading();

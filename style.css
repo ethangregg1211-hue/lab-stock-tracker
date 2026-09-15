@@ -424,7 +424,23 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+.drawer__panel--full {
+  top: 0;
+  border-radius: 0;
+  border-top: none;
+  max-height: 100dvh;
+}
 .drawer__title { font-size: 17px; font-weight: 700; }
+.api-key-row { display: flex; gap: 8px; align-items: center; }
+.api-key-row .input { flex: 1; min-width: 0; }
+.api-key-status { font-size: 13px; padding: 8px 12px; border-radius: var(--radius-sm); }
+.api-key-status.hidden { display: none; }
+.api-key-status--ok   { background: #dcfce7; color: #166534; }
+.api-key-status--warn { background: #fef3c7; color: #92400e; }
+.api-key-status--error { background: #fee2e2; color: #991b1b; }
+.api-key-status--pending { background: var(--surface); color: var(--text-muted); }
+.upload-blank-msg { font-size: 13px; color: #0369a1; background: #e0f2fe; border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 6px; line-height: 1.4; }
+.upload-blank-msg.hidden { display: none; }
 
 /* ===== CAMERA ===== */
 .camera-container {
@@ -538,7 +554,12 @@ select.input { padding-right: 32px; background-image: url("data:image/svg+xml,%3
 #screen-chemical-scan {
   height: 100dvh;
   max-height: 100dvh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+/* Shrink camera when front-result panel is visible so all buttons fit on small phones */
+#screen-chemical-scan.has-front-result .camera-slot {
+  height: 120px;
 }
 
 /* ===== SCAN CAP BANNER ===== */

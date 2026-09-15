@@ -60,6 +60,7 @@
           <span class="upload-card__filename" id="uploadedFileNameHome"></span>
           <span class="badge badge--loaded">Loaded</span>
         </div>
+        <p id="uploadBlankMsg" class="upload-blank-msg hidden">This sheet has no headers. LabScan will create the correct columns automatically when you start scanning.</p>
       </div>
       <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" hidden>
 
@@ -89,15 +90,20 @@
       </div>
     </div>
 
-    <!-- Settings bottom sheet -->
+    <!-- Settings full-screen panel -->
     <div class="drawer hidden" id="settingsDrawer">
       <div class="drawer__backdrop" id="settingsBackdrop"></div>
-      <div class="drawer__panel">
+      <div class="drawer__panel drawer__panel--full">
         <h3 class="drawer__title">Settings</h3>
         <label class="field-group">
           <span class="field-label">Anthropic API Key</span>
-          <input type="password" id="apiKeyInput" class="input" placeholder="sk-ant-...">
+          <div class="api-key-row">
+            <input type="password" id="apiKeyInput" class="input" placeholder="sk-ant-..." autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+            <button class="btn btn--ghost btn--sm" id="apiKeyToggleBtn" type="button" style="flex-shrink:0">Show</button>
+          </div>
+          <p class="muted-text" style="font-size:12px;margin-top:4px">Get your free API key at <span style="color:var(--accent)">console.anthropic.com</span></p>
         </label>
+        <p id="apiKeyStatus" class="api-key-status hidden"></p>
         <p class="field-label" style="margin-top:20px;margin-bottom:4px">Lab details for export</p>
         <p class="muted-text" style="font-size:12px;margin-bottom:10px">These values are added to every chemical inventory export file.</p>
         <label class="field-group">
@@ -121,7 +127,7 @@
           <input type="text" id="chemLab" class="input" placeholder="e.g. 204" autocomplete="off">
         </label>
         <div class="btn-row">
-          <button class="btn btn--primary" id="saveApiKeyBtn">Save</button>
+          <button class="btn btn--primary" id="saveApiKeyBtn">Save &amp; verify</button>
           <button class="btn btn--ghost" id="closeSettingsBtn">Close</button>
         </div>
       </div>
