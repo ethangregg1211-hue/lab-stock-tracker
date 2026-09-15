@@ -2371,7 +2371,7 @@ let _lastExcelBlob = null;
 let _lastExcelFilename = '';
 
 function _wbToBlob(wb) {
-  const arr = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  const arr = XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true, bookSST: false });
   return new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
@@ -2518,11 +2518,11 @@ function bindEvents() {
   // Settings drawer
   document.getElementById('settingsBtn').addEventListener('click', () => {
     document.getElementById('apiKeyInput').value  = localStorage.getItem('anthropic_api_key') || '';
-    document.getElementById('chemPiCode').value   = localStorage.getItem('labscan_pi_code')      || '';
-    document.getElementById('chemPiLast').value   = localStorage.getItem('labscan_pi_lastname')  || '';
-    document.getElementById('chemPiFirst').value  = localStorage.getItem('labscan_pi_firstname') || '';
-    document.getElementById('chemBldg').value     = localStorage.getItem('labscan_bldg_code')    || '';
-    document.getElementById('chemLab').value      = localStorage.getItem('labscan_lab')          || '';
+    document.getElementById('chemPiCode').value   = localStorage.getItem('labscan_pi_code')      || 'P049';
+    document.getElementById('chemPiLast').value   = localStorage.getItem('labscan_pi_lastname')  || 'Welm';
+    document.getElementById('chemPiFirst').value  = localStorage.getItem('labscan_pi_firstname') || 'Alana/Bryan';
+    document.getElementById('chemBldg').value     = localStorage.getItem('labscan_bldg_code')    || '0554';
+    document.getElementById('chemLab').value      = localStorage.getItem('labscan_lab')          || '02549';
     const drawer = document.getElementById('settingsDrawer');
     drawer.classList.remove('hidden');
     drawer.querySelector('.drawer__panel').scrollTop = 0;

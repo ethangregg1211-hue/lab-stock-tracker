@@ -40,11 +40,10 @@ function exportToExcel(items, sessionType, filename) {
     if (item.status === 'imported' || item.status === 'confirmed') return;
     const rowIdx = i + 1; // 0 = header
     const rgb = item.status === 'corrected' ? 'FFCC80' : 'FFE082';
-    const fill = { patternType: 'solid', fgColor: { rgb } };
     for (let c = 0; c < headers.length; c++) {
       const ref = XLSX.utils.encode_cell({ r: rowIdx, c });
       if (!ws[ref]) ws[ref] = { v: '', t: 's' };
-      ws[ref].s = { fill };
+      ws[ref].s = { fill: { fgColor: { rgb } } };
     }
   });
 
@@ -52,6 +51,7 @@ function exportToExcel(items, sessionType, filename) {
   ws['!cols'] = headers.map(() => ({ wch: 18 }));
 
   const wb = XLSX.utils.book_new();
+  wb.Workbook = { SheetViews: [] };
   XLSX.utils.book_append_sheet(wb, ws, 'Inventory');
   return wb;
 }
@@ -198,13 +198,14 @@ function exportChemicalFromOriginal(uploadedHeaders, colMapping, items, fieldNam
       const ref = XLSX.utils.encode_cell({ r: rowIdx, c });
       if (!ws[ref]) ws[ref] = { v: '', t: 's' };
       const rgb = (entry.correctedCols && entry.correctedCols.includes(c)) ? 'FFD9B3' : 'FFEFC0';
-      ws[ref].s = { fill: { patternType: 'solid', fgColor: { rgb } } };
+      ws[ref].s = { fill: { fgColor: { rgb } } };
     }
   });
 
   ws['!cols'] = uploadedHeaders.map(h => ({ wch: Math.max(String(h).length + 2, 14) }));
 
   const wb = XLSX.utils.book_new();
+  wb.Workbook = { SheetViews: [] };
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   return wb;
 }
@@ -246,13 +247,14 @@ function exportChemicalSimple(items) {
     for (let c = 0; c < HEADERS.length; c++) {
       const ref = XLSX.utils.encode_cell({ r: rowIdx, c });
       if (!ws[ref]) ws[ref] = { v: '', t: 's' };
-      ws[ref].s = { fill: { patternType: 'solid', fgColor: { rgb: 'FFEFC0' } } };
+      ws[ref].s = { fill: { fgColor: { rgb: 'FFEFC0' } } };
     }
   });
 
   ws['!cols'] = HEADERS.map(() => ({ wch: 18 }));
 
   const wb = XLSX.utils.book_new();
+  wb.Workbook = { SheetViews: [] };
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   return wb;
 }
